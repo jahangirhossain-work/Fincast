@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fin-Cast KSA | Advanced Financial Forecaster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-gray-800">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <a href="#" class="text-2xl font-bold text-[#0A2647]">
+                Fin-Cast<span class="text-[#FFB830]">.</span>KSA
+            </a>
+            <button id="show-contact-modal" class="bg-[#0A2647] text-white py-2 px-5 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">
+                Get Full Analysis
+            </button>
+        </nav>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-6">
+        <!-- Main Application -->
+        <div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Advanced Financial Forecasting & Reporting</h1>
+                <p class="text-gray-600 mt-2 max-w-3xl mx-auto">A professional tool for Saudi Arabian businesses, featuring AI-powered forecasting, scenario analysis, and automated Zakat & VAT projections.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+                <!-- Left Panel: Inputs -->
+                <div class="lg:col-span-4 bg-gray-50 p-6 rounded-xl border">
+                    <div class="border-b border-gray-200 mb-4">
+                        <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                             <button id="tab-data" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Revenue Data</button>
+                             <button id="tab-assumptions" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700">Assumptions</button>
+                        </nav>
+                    </div>
+                    
+                    <div id="data-panel">
+                        <p class="text-sm text-gray-600 mb-4">Enter your historical monthly revenue to train the forecasting model.</p>
+                        <form id="forecast-form" class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                            <!-- JS will populate historical revenue inputs -->
+                        </form>
+                    </div>
+
+                    <div id="assumptions-panel" class="hidden space-y-4">
+                        <div>
+                            <label for="cogs-percent" class="font-semibold text-gray-700 block mb-1">Cost of Goods Sold (COGS) %</label>
+                            <input type="number" id="cogs-percent" value="40" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                        </div>
+                        <hr>
+                        <div id="expense-categories" class="space-y-2">
+                            <h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>
+                             <!-- JS populates expense inputs -->
+                        </div>
+                        <button id="add-expense" class="text-sm text-blue-600 font-semibold hover:text-blue-800">+ Add Expense Category</button>
+                        <hr>
+                         <h3 class="font-bold text-lg text-gray-800">Tax Assumptions (KSA)</h3>
+                         <div class="flex items-center justify-between">
+                            <label for="apply-vat" class="font-semibold text-gray-700">Apply 15% VAT to Revenue</label>
+                            <input type="checkbox" id="apply-vat" checked class="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300">
+                        </div>
+                         <div>
+                            <label for="zakat-base" class="font-semibold text-gray-700 block mb-1">Annual Zakat Base (SAR)</label>
+                            <input type="number" id="zakat-base" value="500000" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                        </div>
+                        <hr>
+                        <h3 class="font-bold text-lg text-gray-800">Scenario Analysis</h3>
+                         <div>
+                            <label for="optimistic-modifier" class="font-semibold text-gray-700 block mb-1">Optimistic Revenue Modifier (%)</label>
+                            <input type="number" id="optimistic-modifier" value="15" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-green-400">
+                        </div>
+                         <div>
+                            <label for="pessimistic-modifier" class="font-semibold text-gray-700 block mb-1">Pessimistic Revenue Modifier (%)</label>
+                            <input type="number" id="pessimistic-modifier" value="-20" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-red-400">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Dashboard -->
+                <div class="lg:col-span-8 space-y-6">
+                    <!-- KPI Cards -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
+                            <h3 class="text-sm font-semibold text-gray-500">Projected Annual Revenue</h3>
+                            <p id="kpi-annual-revenue" class="text-xl font-bold text-[#0A2647]">SAR 0</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
+                            <h3 class="text-sm font-semibold text-gray-500">Net Profit Margin</h3>
+                            <p id="kpi-net-margin" class="text-xl font-bold text-[#0A2647]">0%</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
+                            <h3 class="text-sm font-semibold text-gray-500">Projected VAT Liability</h3>
+                            <p id="kpi-vat" class="text-xl font-bold text-red-600">SAR 0</p>
+                        </div>
+                         <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
+                            <h3 class="text-sm font-semibold text-gray-500">Annual Zakat Due</h3>
+                            <p id="kpi-zakat" class="text-xl font-bold text-red-600">SAR 0</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Charts -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="md:col-span-2 bg-white p-4 rounded-lg shadow-sm h-96">
+                             <canvas id="forecastChart"></canvas>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm h-96">
+                            <h3 class="text-lg font-bold text-center mb-2">Expense Breakdown</h3>
+                            <canvas id="expenseChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Data Table & Download -->
+                    <div class="bg-white p-4 rounded-lg shadow-sm">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                            <div>
+                                <h3 class="text-xl font-bold text-[#0A2647]">Comprehensive Financial Report</h3>
+                                <input type="text" id="company-name" placeholder="Your Company Name for PDF" class="mt-2 p-2 text-sm border rounded-md">
+                            </div>
+                            <button id="download-pdf" class="bg-red-700 text-white py-2 px-4 rounded-lg hover:bg-red-800 w-full sm:w-auto transition duration-300 flex items-center justify-center space-x-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                                <span>Download Full Report (PDF)</span>
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full bg-white border">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="py-2 px-2 border-b text-left text-sm font-semibold">Month</th>
+                                        <th class="py-2 px-2 border-b text-right text-sm font-semibold">Revenue</th>
+                                        <th class="py-2 px-2 border-b text-right text-sm font-semibold">Gross Profit</th>
+                                        <th class="py-2 px-2 border-b text-right text-sm font-semibold">Net Profit (After Tax)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="report-table-body">
+                                    <!-- JS will populate this with a loading state or initial data -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+         <div class="text-center mt-8">
+             <p class="text-xs text-gray-500">
+                Disclaimer: This tool uses a simplified linear regression model for illustrative purposes and is not a substitute for professional financial advice. All tax calculations are estimates.
+            </p>
+         </div>
+
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const { jsPDF } = window.jspdf;
+            const API_URL = 'http://localhost:3000/api/forecast'; // Your Node.js server URL
+
+            // --- DOM ELEMENT SELECTION ---
+            const form = document.getElementById('forecast-form');
+            const cogsPercentEl = document.getElementById('cogs-percent');
+            const applyVatEl = document.getElementById('apply-vat');
+            const zakatBaseEl = document.getElementById('zakat-base');
+            const optimisticModifierEl = document.getElementById('optimistic-modifier');
+            const pessimisticModifierEl = document.getElementById('pessimistic-modifier');
+            const tableBody = document.getElementById('report-table-body');
+            const expenseCategoriesContainer = document.getElementById('expense-categories');
+            const addExpenseBtn = document.getElementById('add-expense');
+            const companyNameEl = document.getElementById('company-name');
+            
+            // KPIs
+            const kpiAnnualRevenue = document.getElementById('kpi-annual-revenue');
+            const kpiNetMargin = document.getElementById('kpi-net-margin');
+            const kpiVat = document.getElementById('kpi-vat');
+            const kpiZakat = document.getElementById('kpi-zakat');
+            
+            const downloadPdfBtn = document.getElementById('download-pdf');
+
+            // Canvases
+            const forecastCtx = document.getElementById('forecastChart').getContext('2d');
+            const expenseCtx = document.getElementById('expenseChart').getContext('2d');
+            let forecastChart, expenseChart;
+
+            let lastApiResponse = {}; // Store the latest full response from the API
+
+            const formatter = new Intl.NumberFormat('en-SA', { style: 'currency', currency: 'SAR', minimumFractionDigits: 0 });
+            
+            // --- UI & TAB HANDLING ---
+            const tabData = document.getElementById('tab-data');
+            const tabAssumptions = document.getElementById('tab-assumptions');
+            const dataPanel = document.getElementById('data-panel');
+            const assumptionsPanel = document.getElementById('assumptions-panel');
+
+            tabData.addEventListener('click', () => {
+                tabData.classList.add('active');
+                tabAssumptions.classList.remove('active');
+                dataPanel.classList.remove('hidden');
+                assumptionsPanel.classList.add('hidden');
+            });
+
+             tabAssumptions.addEventListener('click', () => {
+                tabAssumptions.classList.add('active');
+                tabData.classList.remove('active');
+                assumptionsPanel.classList.remove('hidden');
+                dataPanel.classList.add('hidden');
+            });
+            
+            // --- INITIALIZATION ---
+            function initializeInputs() {
+                const today = new Date();
+                let sampleRevenue = 20000;
+                form.innerHTML = '';
+                for (let i = 11; i >= 0; i--) {
+                    const date = new Date(today.getFullYear(), today.getMonth() - i -1, 1);
+                    const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
+                    sampleRevenue *= (1 + (Math.random() - 0.4) * 0.15);
+                    const div = document.createElement('div');
+                    div.innerHTML = `<label class="font-semibold text-sm text-gray-600 block">${monthName}</label>
+                                     <input type="number" value="${Math.round(sampleRevenue)}" class="historical-revenue w-full p-2 rounded-md border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">`;
+                    form.appendChild(div);
+                }
+                addExpenseCategory('Salaries', 8000);
+                addExpenseCategory('Rent', 4000);
+                addExpenseCategory('Marketing', 2000);
+            }
+
+            function addExpenseCategory(name = '', value = '') {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2 expense-item';
+                div.innerHTML = `
+                    <input type="text" placeholder="Category Name" value="${name}" class="expense-name w-1/2 p-2 text-sm border rounded-md">
+                    <input type="number" placeholder="Amount (SAR)" value="${value}" class="expense-value w-1/2 p-2 text-sm border rounded-md">
+                    <button class="remove-expense text-red-500 hover:text-red-700 font-bold text-xl">&times;</button>
+                `;
+                expenseCategoriesContainer.appendChild(div);
+                div.querySelector('.remove-expense').addEventListener('click', () => div.remove());
+            }
+
+            // --- API COMMUNICATION ---
+            async function runForecast() {
+                // 1. Gather all inputs from the form
+                const payload = {
+                    historicalRevenues: Array.from(document.querySelectorAll('.historical-revenue')).map(el => parseFloat(el.value) || 0),
+                    cogsPercent: parseFloat(cogsPercentEl.value) || 0,
+                    applyVat: applyVatEl.checked,
+                    zakatBase: parseFloat(zakatBaseEl.value) || 0,
+                    optimisticModifier: parseFloat(optimisticModifierEl.value) || 0,
+                    pessimisticModifier: parseFloat(pessimisticModifierEl.value) || 0,
+                    expenseItems: Array.from(document.querySelectorAll('.expense-item')).map(el => ({
+                        name: el.querySelector('.expense-name').value || 'Unnamed',
+                        value: parseFloat(el.querySelector('.expense-value').value) || 0
+                    }))
+                };
+
+                try {
+                    // 2. Send the data to the Node.js backend
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.statusText}`);
+                    }
+
+                    // 3. Receive the calculated forecast and update the UI
+                    const data = await response.json();
+                    lastApiResponse = data; // Store for PDF generation
+                    updateUI(data);
+
+                } catch (error) {
+                    console.error('Failed to fetch forecast:', error);
+                    // Optionally, show an error message to the user
+                }
+            }
+
+            // --- UI UPDATE ---
+            function updateUI(data) {
+                const { kpis, fullReport, forecastedRevenues } = data;
+                const historicalRevenues = fullReport.filter(r => r.isHistorical).map(r => r.revenue);
+
+                // KPIs
+                kpiAnnualRevenue.textContent = formatter.format(kpis.annualRevenue);
+                kpiNetMargin.textContent = `${kpis.netMargin.toFixed(1)}%`;
+                kpiVat.textContent = formatter.format(kpis.vat);
+                kpiZakat.textContent = formatter.format(kpis.zakat);
+                
+                // Table
+                tableBody.innerHTML = fullReport.map(row => {
+                    const today = new Date();
+                    const date = new Date(today.getFullYear(), today.getMonth() - 11 + row.monthIndex, 1);
+                    const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
+                    return `
+                        <tr class="border-b hover:bg-gray-50 ${row.isHistorical ? 'bg-gray-50' : ''}">
+                            <td class="py-2 px-2 text-sm">${monthName}</td>
+                            <td class="py-2 px-2 text-right text-sm font-medium ${row.isHistorical ? 'text-gray-700' : 'text-blue-600'}">${formatter.format(row.revenue)}</td>
+                            <td class="py-2 px-2 text-right text-sm">${formatter.format(row.grossProfit)}</td>
+                            <td class="py-2 px-2 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-gray-800' : 'text-red-700'}">${formatter.format(row.netProfit)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // Forecast Chart
+                const labels = fullReport.map(row => {
+                    const today = new Date();
+                    return new Date(today.getFullYear(), today.getMonth() - 11 + row.monthIndex, 1);
+                });
+                
+                if (forecastChart) { forecastChart.destroy(); }
+                forecastChart = new Chart(forecastCtx, {
+                    type: 'line',
+                    data: { 
+                        labels, 
+                        datasets: [ 
+                            { label: 'Historical Revenue', data: historicalRevenues, borderColor: '#0A2647', borderWidth: 3, tension: 0.3, fill: true, backgroundColor: 'rgba(10, 38, 71, 0.1)' }, 
+                            { label: 'Forecast (Baseline)', data: Array(11).fill(null).concat(historicalRevenues[11], forecastedRevenues.baseline), borderColor: '#3b82f6', borderDash: [5, 5], borderWidth: 3, tension: 0.3 } 
+                        ] 
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Revenue Forecast (Historical vs. AI Baseline)' } } }
+                });
+
+                // Expense Chart
+                const expenseItems = JSON.parse(JSON.stringify(document.querySelectorAll('.expense-item'))).map(el => ({
+                    name: el.querySelector('.expense-name').value || 'Unnamed',
+                    value: parseFloat(el.querySelector('.expense-value').value) || 0
+                }));
+                if (expenseChart) { expenseChart.destroy(); }
+                expenseChart = new Chart(expenseCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: expenseItems.map(item => item.name),
+                        datasets: [{ data: expenseItems.map(item => item.value), backgroundColor: ['#0A2647', '#1c3d6e', '#2e5494', '#406bb9', '#5282de', '#6495ed'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }}}
+                });
+            }
+
+            // --- PDF DOWNLOAD ---
+            function downloadPDF() {
+                if (!lastApiResponse.fullReport) {
+                    alert('Please generate a forecast first.');
+                    return;
+                }
+                const { kpis, fullReport } = lastApiResponse;
+
+                const doc = new jsPDF();
+                const today = new Date().toLocaleDateString('en-GB');
+                const companyName = companyNameEl.value || 'Your Company';
+
+                // Cover Page
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(22);
+                doc.setTextColor('#0A2647');
+                doc.text('Confidential Financial Report', 105, 80, { align: 'center' });
+                doc.setFontSize(16);
+                doc.text(`Prepared for: ${companyName}`, 105, 95, { align: 'center' });
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(12);
+                doc.text(`Date of Generation: ${today}`, 105, 105, { align: 'center' });
+                doc.text(`Powered by Fin-Cast.KSA`, 105, 115, { align: 'center' });
+                
+                doc.addPage();
+                
+                // Summary Page
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(18);
+                doc.text('Executive Summary & Key Projections', 14, 22);
+                doc.autoTable({
+                    startY: 30,
+                    theme: 'plain',
+                    body: [
+                        ['Projected Annual Revenue:', formatter.format(kpis.annualRevenue)],
+                        ['Projected Net Profit Margin:', `${kpis.netMargin.toFixed(1)}%`],
+                        ['Projected Annual VAT Liability:', formatter.format(kpis.vat)],
+                        ['Projected Annual Zakat Due:', formatter.format(kpis.zakat)],
+                    ],
+                    styles: { fontSize: 12 },
+                    columnStyles: { 0: { fontStyle: 'bold' } }
+                });
+                
+                // Add Charts
+                const forecastChartImg = forecastChart.toBase64Image();
+                const expenseChartImg = expenseChart.toBase64Image();
+                doc.addImage(forecastChartImg, 'PNG', 14, doc.autoTable.previous.finalY + 10, 180, 90);
+                doc.addImage(expenseChartImg, 'PNG', 14, doc.autoTable.previous.finalY + 110, 80, 80);
+
+                doc.addPage();
+                
+                // Detailed Data Table
+                const reportDataForPdf = fullReport.map(row => {
+                     const today = new Date();
+                    const date = new Date(today.getFullYear(), today.getMonth() - 11 + row.monthIndex, 1);
+                    const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
+                    return [monthName, formatter.format(row.revenue), formatter.format(row.cogs), formatter.format(row.grossProfit), formatter.format(row.monthlyOpEx), formatter.format(row.vat), formatter.format(row.zakatForMonth), formatter.format(row.netProfit)];
+                });
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(18);
+                doc.text('Detailed Financial Projections (24 Months)', 14, 22);
+                doc.autoTable({
+                    startY: 30,
+                    head: [['Month', 'Revenue', 'COGS', 'Gross Profit', 'OpEx', 'VAT', 'Zakat', 'Net Profit']],
+                    body: reportDataForPdf,
+                    theme: 'striped',
+                    headStyles: { fillColor: [10, 38, 71] },
+                });
+
+                doc.save(`${companyName}_Financial_Report_${today}.pdf`);
+            }
+            
+            // --- EVENT LISTENERS ---
+            document.getElementById('app').addEventListener('input', runForecast);
+            addExpenseBtn.addEventListener('click', () => addExpenseCategory());
+            downloadPdfBtn.addEventListener('click', downloadPDF);
+            
+            // --- INITIALIZATION ---
+            initializeInputs();
+            runForecast(); // Run once on page load with default data
+        });
+    </script>
+</body>
+</html>
