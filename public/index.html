@@ -21,9 +21,17 @@
             <a href="#" class="text-2xl font-bold text-[#0A2647]">
                 Fin-Cast<span class="text-[#FFB830]">.</span>KSA
             </a>
-            <button id="show-contact-modal" class="bg-[#0A2647] text-white py-2 px-5 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">
-                Get Full Analysis
-            </button>
+            <div class="flex items-center gap-4">
+                <div class="relative">
+                     <select id="currency-selector" class="bg-gray-100 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2">
+                        <option value="SAR" selected>SAR</option>
+                        <option value="USD">USD</option>
+                    </select>
+                </div>
+                <button id="show-contact-modal" class="bg-[#0A2647] text-white py-2 px-5 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">
+                    Get Full Analysis
+                </button>
+            </div>
         </nav>
     </header>
 
@@ -39,16 +47,30 @@
 
                 <!-- Left Panel: Inputs -->
                 <div class="lg:col-span-4 bg-gray-50 p-6 rounded-xl border">
-                    <div class="border-b border-gray-200 mb-4">
-                        <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                             <button id="tab-data" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Revenue Data</button>
-                             <button id="tab-assumptions" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700">Assumptions</button>
-                        </nav>
+                     <div class="flex justify-between items-center mb-4">
+                        <div class="border-b border-gray-200">
+                            <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                                 <button id="tab-data" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Revenue Data</button>
+                                 <button id="tab-assumptions" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700">Assumptions</button>
+                            </nav>
+                        </div>
+                         <!-- Loading Spinner -->
+                        <div id="loading-spinner" class="hidden">
+                            <svg class="animate-spin h-5 w-5 text-[#0A2647]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
                     </div>
                     
                     <div id="data-panel">
-                        <p class="text-sm text-gray-600 mb-4">Enter 12 months of historical revenue to train the forecasting model.</p>
-                        <form id="forecast-form" class="space-y-3 max-h-96 overflow-y-auto pr-2">
+                        <div class="flex items-center gap-2 mb-4">
+                            <button id="export-csv" class="w-1/2 text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg">Export CSV</button>
+                            <label for="import-csv-input" class="w-1/2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg cursor-pointer text-center">Import CSV</label>
+                            <input type="file" id="import-csv-input" class="hidden" accept=".csv">
+                        </div>
+                        <p class="text-sm text-gray-600 mb-4">Enter 12 months of historical revenue.</p>
+                        <form id="forecast-form" class="space-y-3 max-h-80 overflow-y-auto pr-2">
                             <!-- JS will populate historical revenue inputs -->
                         </form>
                     </div>
@@ -182,16 +204,11 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const { jsPDF } = window.jspdf;
-            // **FIX:** Use a relative path for the API URL so it works when deployed.
             const API_URL = '/api/forecast';
+            const SAR_TO_USD_RATE = 0.27;
 
             // --- DOM ELEMENT SELECTION ---
             const form = document.getElementById('forecast-form');
-            const cogsPercentEl = document.getElementById('cogs-percent');
-            const applyVatEl = document.getElementById('apply-vat');
-            const zakatBaseEl = document.getElementById('zakat-base');
-            const optimisticModifierEl = document.getElementById('optimistic-modifier');
-            const pessimisticModifierEl = document.getElementById('pessimistic-modifier');
             const tableBody = document.getElementById('report-table-body');
             const expenseCategoriesContainer = document.getElementById('expense-categories');
             const addExpenseBtn = document.getElementById('add-expense');
@@ -202,9 +219,14 @@
             const closeModalBtn = document.getElementById('close-modal');
             const forecastCtx = document.getElementById('forecastChart').getContext('2d');
             const expenseCtx = document.getElementById('expenseChart').getContext('2d');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const currencySelector = document.getElementById('currency-selector');
+            const exportCsvBtn = document.getElementById('export-csv');
+            const importCsvInput = document.getElementById('import-csv-input');
+
             let forecastChart, expenseChart;
             let lastApiResponse = {}; 
-            const formatter = new Intl.NumberFormat('en-SA', { style: 'currency', currency: 'SAR', minimumFractionDigits: 0 });
+            let currentCurrency = 'SAR';
             
             // --- UI & TAB HANDLING ---
             const tabData = document.getElementById('tab-data');
@@ -212,16 +234,12 @@
             const dataPanel = document.getElementById('data-panel');
             const assumptionsPanel = document.getElementById('assumptions-panel');
             tabData.addEventListener('click', () => {
-                tabData.classList.add('active');
-                tabAssumptions.classList.remove('active');
-                dataPanel.classList.remove('hidden');
-                assumptionsPanel.classList.add('hidden');
+                tabData.classList.add('active'); tabAssumptions.classList.remove('active');
+                dataPanel.classList.remove('hidden'); assumptionsPanel.classList.add('hidden');
             });
             tabAssumptions.addEventListener('click', () => {
-                tabAssumptions.classList.add('active');
-                tabData.classList.remove('active');
-                assumptionsPanel.classList.remove('hidden');
-                dataPanel.classList.add('hidden');
+                tabAssumptions.classList.add('active'); tabData.classList.remove('active');
+                assumptionsPanel.classList.remove('hidden'); dataPanel.classList.add('hidden');
             });
             
             // --- MODAL HANDLING ---
@@ -243,15 +261,18 @@
                     const seasonalIndex = date.getMonth();
                     baseRevenue *= 1.02;
                     const sampleRevenue = baseRevenue * seasonalPattern[seasonalIndex] * (1 + (Math.random() - 0.5) * 0.1);
-                    
-                    const div = document.createElement('div');
-                    div.innerHTML = `<label class="font-semibold text-sm text-gray-600 block">${monthName}</label>
-                                     <input type="number" value="${Math.round(sampleRevenue)}" class="historical-revenue w-full p-2 rounded-md border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">`;
-                    form.appendChild(div);
+                    form.appendChild(createRevenueInput(monthName, Math.round(sampleRevenue)));
                 }
                 addExpenseCategory('Salaries & Wages', 8000);
                 addExpenseCategory('Rent & Utilities', 4000);
                 addExpenseCategory('Marketing & Sales', 2500);
+            }
+
+            function createRevenueInput(monthName, value) {
+                const div = document.createElement('div');
+                div.innerHTML = `<label class="font-semibold text-sm text-gray-600 block">${monthName}</label>
+                                 <input type="number" value="${value}" class="historical-revenue w-full p-2 rounded-md border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">`;
+                return div;
             }
 
             function addExpenseCategory(name = '', value = '') {
@@ -264,29 +285,38 @@
                 `;
                 expenseCategoriesContainer.appendChild(div);
                 div.querySelector('.remove-expense').addEventListener('click', () => {
-                    div.remove();
-                    runForecast();
+                    div.remove(); runForecast();
+                });
+            }
+
+            // --- DATA GATHERING & FORMATTING ---
+            function getInputs() {
+                return {
+                    historicalRevenues: Array.from(document.querySelectorAll('.historical-revenue')).map(el => parseFloat(el.value) || 0),
+                    cogsPercent: parseFloat(document.getElementById('cogs-percent').value) || 0,
+                    applyVat: document.getElementById('apply-vat').checked,
+                    zakatBase: parseFloat(document.getElementById('zakat-base').value) || 0,
+                    optimisticModifier: parseFloat(document.getElementById('optimistic-modifier').value) || 0,
+                    pessimisticModifier: parseFloat(document.getElementById('pessimistic-modifier').value) || 0,
+                    expenseItems: Array.from(document.querySelectorAll('.expense-item')).map(el => ({
+                        name: el.querySelector('.expense-name').value || 'Unnamed',
+                        value: parseFloat(el.querySelector('.expense-value').value) || 0
+                    }))
+                };
+            }
+             function getFormatter() {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: currentCurrency,
+                    minimumFractionDigits: 0,
                 });
             }
 
             // --- API COMMUNICATION ---
             async function runForecast() {
+                loadingSpinner.classList.remove('hidden');
                 tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-gray-500">Generating forecast...</td></tr>`;
-                
-                const expenseItems = Array.from(document.querySelectorAll('.expense-item')).map(el => ({
-                    name: el.querySelector('.expense-name').value || 'Unnamed',
-                    value: parseFloat(el.querySelector('.expense-value').value) || 0
-                }));
-
-                const payload = {
-                    historicalRevenues: Array.from(document.querySelectorAll('.historical-revenue')).map(el => parseFloat(el.value) || 0),
-                    cogsPercent: parseFloat(cogsPercentEl.value) || 0,
-                    applyVat: applyVatEl.checked,
-                    zakatBase: parseFloat(zakatBaseEl.value) || 0,
-                    optimisticModifier: parseFloat(optimisticModifierEl.value) || 0,
-                    pessimisticModifier: parseFloat(pessimisticModifierEl.value) || 0,
-                    expenseItems: expenseItems 
-                };
+                const payload = getInputs();
 
                 try {
                     const response = await fetch(API_URL, {
@@ -295,46 +325,94 @@
                         body: JSON.stringify(payload)
                     });
                     if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-                    const data = await response.json();
-                    lastApiResponse = data;
-                    updateUI(data, expenseItems);
+                    lastApiResponse = await response.json();
+                    updateUI();
                 } catch (error) {
                     console.error('Failed to fetch forecast:', error);
-                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">Error fetching data from the server. Please ensure the server is running and accessible.</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">Error fetching data. Please ensure the server is running.</td></tr>`;
+                } finally {
+                    loadingSpinner.classList.add('hidden');
                 }
             }
 
             // --- UI UPDATE ---
-            function updateUI(data, expenseItems) { 
-                const { kpis, fullReport, forecastedRevenues } = data;
-                const historicalRevenues = fullReport.filter(r => r.isHistorical).map(r => r.revenue);
-                document.getElementById('kpi-annual-revenue').textContent = formatter.format(kpis.annualRevenue);
+            function updateUI() {
+                if (!lastApiResponse.kpis) return;
+
+                const { kpis, fullReport, forecastedRevenues } = lastApiResponse;
+                const expenseItems = getInputs().expenseItems;
+                const formatter = getFormatter();
+                const conversionRate = currentCurrency === 'USD' ? SAR_TO_USD_RATE : 1;
+
+                document.getElementById('kpi-annual-revenue').textContent = formatter.format(kpis.annualRevenue * conversionRate);
                 document.getElementById('kpi-net-margin').textContent = `${kpis.netMargin.toFixed(1)}%`;
-                document.getElementById('kpi-vat').textContent = formatter.format(kpis.vat);
-                document.getElementById('kpi-zakat').textContent = formatter.format(kpis.zakat);
+                document.getElementById('kpi-vat').textContent = formatter.format(kpis.vat * conversionRate);
+                document.getElementById('kpi-zakat').textContent = formatter.format(kpis.zakat * conversionRate);
                 
                 tableBody.innerHTML = fullReport.map(row => {
-                    const today = new Date();
-                    const date = new Date(today.getFullYear() - 1, today.getMonth() - 11 + row.monthIndex, 1);
+                    const date = new Date(new Date().getFullYear() - 1, new Date().getMonth() - 11 + row.monthIndex, 1);
                     const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
                     return `<tr class="border-b hover:bg-gray-50 ${row.isHistorical ? 'bg-gray-50' : ''}">
                             <td class="py-2 px-2 text-sm">${monthName}</td>
-                            <td class="py-2 px-2 text-right text-sm font-medium ${row.isHistorical ? 'text-gray-700' : 'text-blue-600'}">${formatter.format(row.revenue)}</td>
-                            <td class="py-2 px-2 text-right text-sm">${formatter.format(row.grossProfit)}</td>
-                            <td class="py-2 px-2 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-gray-800' : 'text-red-700'}">${formatter.format(row.netProfit)}</td>
+                            <td class="py-2 px-2 text-right text-sm font-medium ${row.isHistorical ? 'text-gray-700' : 'text-blue-600'}">${formatter.format(row.revenue * conversionRate)}</td>
+                            <td class="py-2 px-2 text-right text-sm">${formatter.format(row.grossProfit * conversionRate)}</td>
+                            <td class="py-2 px-2 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-gray-800' : 'text-red-700'}">${formatter.format(row.netProfit * conversionRate)}</td>
                         </tr>`;
                 }).join('');
 
-                const labels = fullReport.map(row => {
-                    const today = new Date();
-                    return new Date(today.getFullYear() - 1, today.getMonth() - 11 + row.monthIndex, 1);
-                });
+                const labels = fullReport.map(row => new Date(new Date().getFullYear() - 1, new Date().getMonth() - 11 + row.monthIndex, 1));
+                const historicalRevenues = fullReport.filter(r => r.isHistorical).map(r => r.revenue * conversionRate);
                 
                 if (forecastChart) forecastChart.destroy();
                 forecastChart = new Chart(forecastCtx, {
                     type: 'line',
-                    data: { labels, datasets: [ { label: 'Historical Revenue', data: historicalRevenues, borderColor: '#0A2647', borderWidth: 3, tension: 0.3, fill: true, backgroundColor: 'rgba(10, 38, 71, 0.1)' }, { label: 'Forecast (Seasonal)', data: Array(11).fill(null).concat(historicalRevenues[11], forecastedRevenues.baseline), borderColor: '#3b82f6', borderDash: [5, 5], borderWidth: 3, tension: 0.3 } ] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Revenue Forecast (Historical vs. Seasonal Model)' } } }
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Pessimistic',
+                                data: Array(12).fill(null).concat(forecastedRevenues.pessimistic.map(r => r * conversionRate)),
+                                borderColor: 'rgba(239, 68, 68, 0.2)',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                borderWidth: 1,
+                                fill: '+1', // Fill to the optimistic line
+                            },
+                             {
+                                label: 'Optimistic',
+                                data: Array(12).fill(null).concat(forecastedRevenues.optimistic.map(r => r * conversionRate)),
+                                borderColor: 'rgba(34, 197, 94, 0.2)',
+                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                borderWidth: 1,
+                                fill: false,
+                            },
+                            {
+                                label: 'Forecast',
+                                data: Array(11).fill(null).concat(historicalRevenues[11], forecastedRevenues.baseline.map(r => r * conversionRate)),
+                                borderColor: '#3b82f6',
+                                borderWidth: 3,
+                                borderDash: [5, 5],
+                                pointBackgroundColor: '#3b82f6',
+                                pointRadius: 3,
+                            },
+                             {
+                                label: 'Historical',
+                                data: historicalRevenues,
+                                borderColor: '#0A2647',
+                                backgroundColor: '#0A2647',
+                                borderWidth: 3,
+                                tension: 0.3,
+                                fill: false,
+                            },
+                        ]
+                    },
+                    options: { 
+                        responsive: true, maintainAspectRatio: false, 
+                        plugins: { 
+                            legend: { position: 'bottom' }, 
+                            title: { display: true, text: `Revenue Forecast & Scenarios (${currentCurrency})` } 
+                        },
+                        scales: { y: { beginAtZero: true } }
+                    }
                 });
 
                 if (expenseChart) expenseChart.destroy();
@@ -342,97 +420,113 @@
                     type: 'doughnut',
                     data: {
                         labels: expenseItems.map(item => item.name),
-                        datasets: [{ data: expenseItems.map(item => item.value), backgroundColor: ['#0A2647', '#1c3d6e', '#2e5494', '#406bb9', '#5282de', '#6495ed'] }]
+                        datasets: [{ data: expenseItems.map(item => item.value * conversionRate), backgroundColor: ['#0A2647', '#1c3d6e', '#2e5494', '#406bb9', '#5282de', '#6495ed'] }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }}}
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, title: {display: true, text: `Expenses (${currentCurrency})`} }}
                 });
             }
 
-            // --- PDF DOWNLOAD (ROBUST VERSION) ---
-            function downloadPDF() {
-                if (!lastApiResponse || !lastApiResponse.fullReport || lastApiResponse.fullReport.length === 0) {
-                    alert('Data not available. Please ensure a forecast has been generated.');
-                    console.error('Download failed: lastApiResponse is not ready.', lastApiResponse);
-                    return;
-                }
-                
-                if (!forecastChart || !expenseChart || !forecastChart.canvas.width || !expenseChart.canvas.width) {
-                    alert('Charts are not ready. Please wait a moment and try again.');
-                    console.error('Download failed: Chart objects are not initialized or have no dimensions.');
-                    return;
-                }
+            // --- CSV & PDF ---
+            function exportToCSV() {
+                const inputs = getInputs();
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += "type,name,value\n";
+                inputs.historicalRevenues.forEach((rev, i) => csvContent += `revenue,Month ${i+1},${rev}\n`);
+                inputs.expenseItems.forEach(exp => csvContent += `expense,${exp.name},${exp.value}\n`);
+                Object.keys(inputs).filter(k => !['historicalRevenues', 'expenseItems'].includes(k)).forEach(key => csvContent += `assumption,${key},${inputs[key]}\n`);
 
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", "fincast_data.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+             function importFromCSV(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const rows = e.target.result.split('\n').slice(1); // Skip header
+                    const newRevenues = [];
+                    expenseCategoriesContainer.innerHTML = '<h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>';
+                    
+                    rows.forEach(row => {
+                        const [type, name, value] = row.split(',');
+                        if (type === 'revenue') newRevenues.push(parseFloat(value));
+                        if (type === 'expense') addExpenseCategory(name, parseFloat(value));
+                        if (type === 'assumption') {
+                            const el = document.getElementById(name.replace(/([A-Z])/g, '-$1').toLowerCase());
+                            if (el) {
+                                if (el.type === 'checkbox') el.checked = value.trim() === 'true';
+                                else el.value = value;
+                            }
+                        }
+                    });
+                    
+                    const revenueInputs = document.querySelectorAll('.historical-revenue');
+                    newRevenues.forEach((rev, i) => { if (revenueInputs[i]) revenueInputs[i].value = rev; });
+                    runForecast();
+                };
+                reader.readAsText(file);
+             }
+
+
+            function downloadPDF() {
+                if (!lastApiResponse.kpis || !forecastChart || !expenseChart) { alert('Please generate a forecast first.'); return; }
                 try {
                     const { kpis, fullReport } = lastApiResponse;
                     const doc = new jsPDF();
-                    const today = new Date().toLocaleDateString('en-GB');
                     const companyName = companyNameEl.value || 'Your Company';
+                    const formatter = getFormatter();
+                    const conversionRate = currentCurrency === 'USD' ? SAR_TO_USD_RATE : 1;
 
-                    // Cover Page
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(22);
-                    doc.setTextColor('#0A2647');
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor('#0A2647');
                     doc.text('Confidential Financial Report', 105, 80, { align: 'center' });
-                    doc.setFontSize(16);
-                    doc.text(`Prepared for: ${companyName}`, 105, 95, { align: 'center' });
-                    doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(12);
-                    doc.text(`Date of Generation: ${today}`, 105, 105, { align: 'center' });
-                    doc.text(`Powered by Fin-Cast.KSA`, 105, 115, { align: 'center' });
-                    
+                    doc.setFontSize(16); doc.text(`Prepared for: ${companyName}`, 105, 95, { align: 'center' });
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
+                    doc.text(`Date of Generation: ${new Date().toLocaleDateString('en-GB')}`, 105, 105, { align: 'center' });
+                    doc.text(`Currency: ${currentCurrency}`, 105, 115, { align: 'center' });
                     doc.addPage();
-                    
-                    // Summary Page
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(18);
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
                     doc.text('Executive Summary & Key Projections', 14, 22);
-                    doc.autoTable({
-                        startY: 30, theme: 'plain',
-                        body: [
-                            ['Projected Annual Revenue:', formatter.format(kpis.annualRevenue)],
-                            ['Projected Net Profit Margin:', `${kpis.netMargin.toFixed(1)}%`],
-                            ['Projected Annual VAT Liability:', formatter.format(kpis.vat)],
-                            ['Projected Annual Zakat Due:', formatter.format(kpis.zakat)],
-                        ],
-                        styles: { fontSize: 12 },
-                        columnStyles: { 0: { fontStyle: 'bold' } }
-                    });
+                    doc.autoTable({ startY: 30, theme: 'plain', body: [
+                        ['Projected Annual Revenue:', formatter.format(kpis.annualRevenue * conversionRate)],
+                        ['Projected Net Profit Margin:', `${kpis.netMargin.toFixed(1)}%`],
+                        ['Projected Annual VAT Liability:', formatter.format(kpis.vat * conversionRate)],
+                        ['Projected Annual Zakat Due:', formatter.format(kpis.zakat * conversionRate)],
+                    ], styles: { fontSize: 12 }, columnStyles: { 0: { fontStyle: 'bold' } } });
                     
                     const forecastChartImg = forecastChart.toBase64Image('image/png', 1.0);
                     const expenseChartImg = expenseChart.toBase64Image('image/png', 1.0);
                     doc.addImage(forecastChartImg, 'PNG', 14, doc.autoTable.previous.finalY + 10, 180, 90);
                     doc.addImage(expenseChartImg, 'PNG', 14, doc.autoTable.previous.finalY + 110, 80, 80);
-
                     doc.addPage();
                     
-                    const reportDataForPdf = fullReport.map(row => {
-                        const today = new Date();
-                        const date = new Date(today.getFullYear() - 1, today.getMonth() - 11 + row.monthIndex, 1);
-                        const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
-                        return [monthName, formatter.format(row.revenue), formatter.format(row.cogs), formatter.format(row.grossProfit), formatter.format(row.monthlyOpEx), formatter.format(row.vat), formatter.format(row.zakatForMonth), formatter.format(row.netProfit)];
+                    const reportData = fullReport.map(row => {
+                        const date = new Date(new Date().getFullYear() - 1, new Date().getMonth() - 11 + row.monthIndex, 1);
+                        return [ date.toLocaleString('default', { month: 'short', year: '2-digit' }),
+                            formatter.format(row.revenue * conversionRate), formatter.format(row.grossProfit * conversionRate), formatter.format(row.netProfit * conversionRate) ];
                     });
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(18);
-                    doc.text('Detailed Financial Projections (24 Months)', 14, 22);
-                    doc.autoTable({
-                        startY: 30,
-                        head: [['Month', 'Revenue', 'COGS', 'Gross Profit', 'OpEx', 'VAT', 'Zakat', 'Net Profit']],
-                        body: reportDataForPdf,
-                        theme: 'striped',
-                        headStyles: { fillColor: [10, 38, 71] },
-                    });
-
-                    doc.save(`${companyName.replace(/ /g, '_')}_Financial_Report_${today}.pdf`);
-                } catch (error) {
-                    console.error("Failed to generate PDF:", error);
-                    alert("An error occurred while generating the PDF. Please check the console for details.");
-                }
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+                    doc.text(`Detailed Financial Projections (${currentCurrency})`, 14, 22);
+                    doc.autoTable({ startY: 30, head: [['Month', 'Revenue', 'Gross Profit', 'Net Profit']], body: reportData, theme: 'striped', headStyles: { fillColor: [10, 38, 71] }});
+                    doc.save(`${companyName.replace(/ /g, '_')}_Financial_Report.pdf`);
+                } catch (error) { console.error("Failed to generate PDF:", error); alert("An error occurred generating the PDF."); }
             }
             
             // --- EVENT LISTENERS ---
             document.getElementById('app').addEventListener('input', runForecast);
             addExpenseBtn.addEventListener('click', () => addExpenseCategory());
             downloadPdfBtn.addEventListener('click', downloadPDF);
+            exportCsvBtn.addEventListener('click', exportToCSV);
+            importCsvInput.addEventListener('change', importFromCSV);
+            currencySelector.addEventListener('change', (e) => {
+                currentCurrency = e.target.value;
+                updateUI();
+            });
             
             // --- INITIALIZATION ---
             initializeInputs();
@@ -441,4 +535,3 @@
     </script>
 </body>
 </html>
-

@@ -1,7 +1,3 @@
-// server.js
-// Backend for Fin-Cast KSA - Handles all financial logic and API requests.
-// VERSION 2.0: Upgraded to a Seasonal-Trend Forecasting Model for higher accuracy.
-
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -13,7 +9,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
 
 // --- CORE FINANCIAL LOGIC (UPGRADED) ---
 
@@ -41,41 +36,27 @@ function linearRegression(y) {
 }
 
 /**
- * Analyzes historical data to find a seasonal pattern.
- * This is a simplified decomposition model suitable for 12 months of data.
- * @param {number[]} historicalData - 12 months of historical revenue.
- * @returns {number[]} An array of 12 seasonal factors (e.g., 1.1 for +10%, 0.9 for -10%).
+ * Calculates seasonal indices from historical data.
+ * @param {number[]} data - Array of historical data (must be 12 months).
+ * @returns {number[]} - Array of 12 seasonal indices.
  */
-function getSeasonalFactors(historicalData) {
-    if (historicalData.length !== 12) {
-        // If we don't have 12 months, we can't determine seasonality. Return a neutral pattern.
+function calculateSeasonalIndices(data) {
+    if (data.length !== 12) {
+        // Return a neutral index if data is not 12 months
         return Array(12).fill(1);
     }
-
-    // 1. Calculate the overall trend line for the historical data.
-    const { slope, intercept } = linearRegression(historicalData);
-    const trendLine = historicalData.map((_, i) => slope * i + intercept);
-
-    // 2. Detrend the data to isolate seasonal effects.
-    const detrended = historicalData.map((value, i) => {
-        // Avoid division by zero or very small numbers
-        return trendLine[i] !== 0 ? value / trendLine[i] : 1;
-    });
-
-    // 3. Normalize the factors so they average out to 1 over the year.
-    const avgFactor = detrended.reduce((a, b) => a + b, 0) / 12;
-    if (avgFactor === 0) return Array(12).fill(1); // Avoid division by zero
-    
-    const seasonalFactors = detrended.map(factor => factor / avgFactor);
-
-    return seasonalFactors;
+    const average = data.reduce((a, b) => a + b, 0) / 12;
+    if (average === 0) {
+        return Array(12).fill(1);
+    }
+    return data.map(val => val / average);
 }
 
 
-// --- API Endpoints ---
+// --- API ENDPOINT ---
 app.post('/api/forecast', (req, res) => {
     try {
-        const { 
+        const {
             historicalRevenues,
             cogsPercent,
             applyVat,
@@ -85,55 +66,58 @@ app.post('/api/forecast', (req, res) => {
             expenseItems
         } = req.body;
 
-        if (!historicalRevenues || !Array.isArray(historicalRevenues) || historicalRevenues.length !== 12) {
-            return res.status(400).json({ error: 'historicalRevenues is required and must be an array of 12 numbers.' });
+        if (!historicalRevenues || historicalRevenues.length !== 12) {
+            return res.status(400).json({ error: '12 months of historical revenue data are required.' });
         }
-        
-        const monthlyOpEx = expenseItems.reduce((sum, item) => sum + (item.value || 0), 0);
-        const annualZakat = (zakatBase || 0) * 0.025;
-        const cogsRate = (cogsPercent || 0) / 100;
-        const optRate = 1 + ((optimisticModifier || 0) / 100);
-        const pessRate = 1 + ((pessimisticModifier || 0) / 100);
 
-        // --- UPGRADED FORECASTING MODEL ---
-        // 1. Determine the seasonal pattern from the past 12 months.
-        const seasonalFactors = getSeasonalFactors(historicalRevenues);
-        // 2. Project the core trend forward using linear regression.
-        const trendModel = linearRegression(historicalRevenues);
+        // 1. Calculate Seasonal Indices
+        const seasonalIndices = calculateSeasonalIndices(historicalRevenues);
 
-        // --- Generate Forecasted Revenue Data ---
-        const forecastedRevenues = { baseline: [], optimistic: [], pessimistic: [] };
+        // 2. Deseasonalize Data and find Trend
+        const deseasonalizedData = historicalRevenues.map((val, i) => val / seasonalIndices[i]);
+        const model = linearRegression(deseasonalizedData);
+
+        // 3. Forecast Trend for next 12 months
+        const forecastedTrend = [];
         for (let i = 0; i < 12; i++) {
-            // Project the trend for the next 12 months (indices 12 to 23)
-            const trendPrediction = trendModel.slope * (12 + i) + trendModel.intercept;
-            // Re-apply the corresponding seasonal factor for that month
-            const seasonalPrediction = trendPrediction * seasonalFactors[i];
-            
-            const baseline = seasonalPrediction > 0 ? seasonalPrediction : 0;
-            forecastedRevenues.baseline.push(baseline);
-            forecastedRevenues.optimistic.push(baseline * optRate);
-            forecastedRevenues.pessimistic.push(baseline * pessRate);
+            const trendValue = model.slope * (12 + i) + model.intercept;
+            forecastedTrend.push(trendValue > 0 ? trendValue : 0);
         }
 
-        // --- Build the Full 24-Month Report ---
-        const fullReport = [];
-        const allBaselineRevenues = [...historicalRevenues, ...forecastedRevenues.baseline];
+        // 4. Re-seasonalize the forecast and create scenarios
+        const baselineForecast = forecastedTrend.map((val, i) => val * seasonalIndices[i]);
         
-        let totalForecastedRevenue = 0, totalForecastedNetProfit = 0, totalVat = 0;
+        const forecastedRevenues = {
+            baseline: baselineForecast,
+            optimistic: baselineForecast.map(val => val * (1 + (optimisticModifier / 100))),
+            pessimistic: baselineForecast.map(val => val * (1 + (pessimisticModifier / 100)))
+        };
+
+        // 5. Generate Full Report using baseline forecast
+        const monthlyOpEx = expenseItems.reduce((sum, item) => sum + item.value, 0);
+        const annualZakat = zakatBase * 0.025;
+
+        const fullReport = [];
+        let totalForecastedRevenue = 0;
+        let totalForecastedNetProfit = 0;
+        let totalVat = 0;
+
+        const allRevenues = [...historicalRevenues, ...forecastedRevenues.baseline];
 
         for (let i = 0; i < 24; i++) {
             const isHistorical = i < 12;
-            const revenue = allBaselineRevenues[i];
-            const cogs = revenue * cogsRate;
+            const revenue = allRevenues[i];
+            const cogs = revenue * (cogsPercent / 100);
             const grossProfit = revenue - cogs;
             const vat = applyVat ? revenue * 0.15 : 0;
             const zakatForMonth = (!isHistorical && i === 23) ? annualZakat : 0;
-            const netProfit = grossProfit - monthlyOpEx - vat - zakatForMonth;
+            const profitBeforeTax = grossProfit - monthlyOpEx;
+            const netProfit = profitBeforeTax - vat - zakatForMonth;
 
             if (!isHistorical) {
                 totalForecastedRevenue += revenue;
-                totalForecastedNetProfit += netProfit;
                 totalVat += vat;
+                totalForecastedNetProfit += netProfit; // Zakat is already subtracted
             }
 
             fullReport.push({
@@ -145,31 +129,30 @@ app.post('/api/forecast', (req, res) => {
                 monthlyOpEx,
                 vat,
                 zakatForMonth,
-                netProfit
+                netProfit,
             });
         }
         
         const netProfitMargin = totalForecastedRevenue > 0 ? (totalForecastedNetProfit / totalForecastedRevenue) * 100 : 0;
 
         res.json({
-            forecastedRevenues,
-            fullReport,
             kpis: {
                 annualRevenue: totalForecastedRevenue,
                 netMargin: netProfitMargin,
                 vat: totalVat,
-                zakat: annualZakat
-            }
+                zakat: annualZakat,
+            },
+            forecastedRevenues, // Now includes all 3 scenarios
+            fullReport
         });
 
     } catch (error) {
-        console.error('Error in /api/forecast:', error);
+        console.error('Error during forecast generation:', error);
         res.status(500).json({ error: 'An internal server error occurred.' });
     }
 });
 
-
-// --- Server Initialization ---
+// --- Server Start ---
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
