@@ -182,7 +182,8 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const { jsPDF } = window.jspdf;
-            const API_URL = 'http://localhost:3000/api/forecast';
+            // **FIX:** Use a relative path for the API URL so it works when deployed.
+            const API_URL = '/api/forecast';
 
             // --- DOM ELEMENT SELECTION ---
             const form = document.getElementById('forecast-form');
@@ -272,7 +273,6 @@
             async function runForecast() {
                 tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-gray-500">Generating forecast...</td></tr>`;
                 
-                // **FIX:** Gather all inputs in one place before making the API call.
                 const expenseItems = Array.from(document.querySelectorAll('.expense-item')).map(el => ({
                     name: el.querySelector('.expense-name').value || 'Unnamed',
                     value: parseFloat(el.querySelector('.expense-value').value) || 0
@@ -285,7 +285,7 @@
                     zakatBase: parseFloat(zakatBaseEl.value) || 0,
                     optimisticModifier: parseFloat(optimisticModifierEl.value) || 0,
                     pessimisticModifier: parseFloat(pessimisticModifierEl.value) || 0,
-                    expenseItems: expenseItems // Use the gathered data
+                    expenseItems: expenseItems 
                 };
 
                 try {
@@ -297,16 +297,15 @@
                     if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
                     const data = await response.json();
                     lastApiResponse = data;
-                    // **FIX:** Pass the consistent expense data to the update function.
                     updateUI(data, expenseItems);
                 } catch (error) {
                     console.error('Failed to fetch forecast:', error);
-                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">Error fetching data. Is the server running?</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">Error fetching data from the server. Please ensure the server is running and accessible.</td></tr>`;
                 }
             }
 
             // --- UI UPDATE ---
-            function updateUI(data, expenseItems) { // **FIX:** Accept expenseItems as an argument
+            function updateUI(data, expenseItems) { 
                 const { kpis, fullReport, forecastedRevenues } = data;
                 const historicalRevenues = fullReport.filter(r => r.isHistorical).map(r => r.revenue);
                 document.getElementById('kpi-annual-revenue').textContent = formatter.format(kpis.annualRevenue);
@@ -442,3 +441,4 @@
     </script>
 </body>
 </html>
+
