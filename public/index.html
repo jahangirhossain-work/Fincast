@@ -11,9 +11,26 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+        .kpi-card {
+            border-left: 4px solid #FFB830;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .tab-button.active {
+            border-color: #0A2647;
+            color: #0A2647;
+            font-weight: 600;
+        }
+    </style>
 </head>
-<body class="text-gray-800">
+<body class="text-gray-800 bg-gray-50">
 
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-50">
@@ -69,7 +86,7 @@
                             <label for="import-csv-input" class="w-1/2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg cursor-pointer text-center">Import CSV</label>
                             <input type="file" id="import-csv-input" class="hidden" accept=".csv">
                         </div>
-                        <p class="text-sm text-gray-600 mb-4">Enter 12 months of historical revenue.</p>
+                        <p class="text-sm text-gray-600 mb-4">Enter historical revenue for the last 12 completed months.</p>
                         <form id="forecast-form" class="space-y-3 max-h-80 overflow-y-auto pr-2">
                             <!-- JS will populate historical revenue inputs -->
                         </form>
@@ -204,8 +221,12 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const { jsPDF } = window.jspdf;
-            const API_URL = '/api/forecast';
             const SAR_TO_USD_RATE = 0.27;
+
+            // --- DYNAMIC DATE CALCULATION ---
+            const today = new Date();
+            // The 12-month historical period starts 12 months before the *current* month, effectively ending last month.
+            const historicalPeriodStartDate = new Date(today.getFullYear(), today.getMonth() - 12, 1);
 
             // --- DOM ELEMENT SELECTION ---
             const form = document.getElementById('forecast-form');
@@ -234,12 +255,16 @@
             const dataPanel = document.getElementById('data-panel');
             const assumptionsPanel = document.getElementById('assumptions-panel');
             tabData.addEventListener('click', () => {
-                tabData.classList.add('active'); tabAssumptions.classList.remove('active');
-                dataPanel.classList.remove('hidden'); assumptionsPanel.classList.add('hidden');
+                tabData.classList.add('active', 'border-[#0A2647]', 'text-[#0A2647]'); 
+                tabAssumptions.classList.remove('active', 'border-[#0A2647]', 'text-[#0A2647]');
+                dataPanel.classList.remove('hidden'); 
+                assumptionsPanel.classList.add('hidden');
             });
             tabAssumptions.addEventListener('click', () => {
-                tabAssumptions.classList.add('active'); tabData.classList.remove('active');
-                assumptionsPanel.classList.remove('hidden'); dataPanel.classList.add('hidden');
+                tabAssumptions.classList.add('active', 'border-[#0A2647]', 'text-[#0A2647]'); 
+                tabData.classList.remove('active', 'border-[#0A2647]', 'text-[#0A2647]');
+                assumptionsPanel.classList.remove('hidden'); 
+                dataPanel.classList.add('hidden');
             });
             
             // --- MODAL HANDLING ---
@@ -251,15 +276,16 @@
 
             // --- INITIALIZATION ---
             function initializeInputs() {
-                const today = new Date();
                 const seasonalPattern = [1.1, 1.0, 1.05, 0.95, 0.9, 0.85, 0.9, 1.0, 1.1, 1.15, 1.2, 1.25];
                 let baseRevenue = 20000;
                 form.innerHTML = '';
-                for (let i = 11; i >= 0; i--) {
-                    const date = new Date(today.getFullYear() - 1, today.getMonth() - i, 1);
+                
+                // FIX: Generate inputs for 12 months starting from the calculated historicalPeriodStartDate
+                for (let i = 0; i < 12; i++) {
+                    const date = new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + i, 1);
                     const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
                     const seasonalIndex = date.getMonth();
-                    baseRevenue *= 1.02;
+                    baseRevenue *= 1.02; // Apply a small growth factor
                     const sampleRevenue = baseRevenue * seasonalPattern[seasonalIndex] * (1 + (Math.random() - 0.5) * 0.1);
                     form.appendChild(createRevenueInput(monthName, Math.round(sampleRevenue)));
                 }
@@ -312,24 +338,73 @@
                 });
             }
 
-            // --- API COMMUNICATION ---
+            // --- MOCK API & FORECAST LOGIC ---
+            function runMockApi(payload) {
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        const historical = payload.historicalRevenues;
+                        const avgGrowth = (historical[11] / historical[0]) ** (1/11);
+                        const baselineForecast = [];
+                        for(let i=0; i<12; i++) {
+                            const lastYearValue = historical[i];
+                            const nextValue = lastYearValue * avgGrowth;
+                            baselineForecast.push(nextValue * (1 + (Math.random() - 0.5) * 0.05));
+                        }
+                        
+                        const fullReport = [];
+                        const combinedRevenue = [...historical, ...baselineForecast];
+                        let totalVat = 0;
+
+                        combinedRevenue.forEach((revenue, index) => {
+                            const grossProfit = revenue * (1 - payload.cogsPercent / 100);
+                            const totalOpEx = payload.expenseItems.reduce((acc, item) => acc + item.value, 0);
+                            const netProfit = grossProfit - totalOpEx;
+                            if (payload.applyVat && index >= 12) totalVat += revenue * 0.15;
+
+                            fullReport.push({
+                                monthIndex: index,
+                                revenue: revenue,
+                                grossProfit: grossProfit,
+                                netProfit: netProfit,
+                                isHistorical: index < 12
+                            });
+                        });
+                        
+                        const annualRevenue = baselineForecast.reduce((a, b) => a + b, 0);
+                        const totalNetProfit = fullReport.slice(12).reduce((sum, r) => sum + r.netProfit, 0);
+                        const netMargin = annualRevenue > 0 ? (totalNetProfit / annualRevenue) * 100 : 0;
+                        const zakat = payload.zakatBase * 0.025;
+                        
+                        const response = {
+                            kpis: {
+                                annualRevenue: annualRevenue,
+                                netMargin: netMargin,
+                                vat: totalVat,
+                                zakat: zakat,
+                            },
+                            fullReport: fullReport,
+                            forecastedRevenues: {
+                                baseline: baselineForecast,
+                                optimistic: baselineForecast.map(r => r * (1 + payload.optimisticModifier / 100)),
+                                pessimistic: baselineForecast.map(r => r * (1 + payload.pessimisticModifier / 100)),
+                            }
+                        };
+                        resolve(response);
+                    }, 500);
+                });
+            }
+
             async function runForecast() {
                 loadingSpinner.classList.remove('hidden');
                 tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-gray-500">Generating forecast...</td></tr>`;
                 const payload = getInputs();
 
                 try {
-                    const response = await fetch(API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-                    lastApiResponse = await response.json();
+                    lastApiResponse = await runMockApi(payload);
                     updateUI();
                 } catch (error) {
-                    console.error('Failed to fetch forecast:', error);
-                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">Error fetching data. Please ensure the server is running.</td></tr>`;
+                    console.error('Failed to generate forecast:', error);
+                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">An error occurred during forecasting.</td></tr>`;
                 } finally {
                     loadingSpinner.classList.add('hidden');
                 }
@@ -350,7 +425,8 @@
                 document.getElementById('kpi-zakat').textContent = formatter.format(kpis.zakat * conversionRate);
                 
                 tableBody.innerHTML = fullReport.map(row => {
-                    const date = new Date(new Date().getFullYear() - 1, new Date().getMonth() - 11 + row.monthIndex, 1);
+                    // FIX: Calculate date based on the consistent historicalPeriodStartDate
+                    const date = new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + row.monthIndex, 1);
                     const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
                     return `<tr class="border-b hover:bg-gray-50 ${row.isHistorical ? 'bg-gray-50' : ''}">
                             <td class="py-2 px-2 text-sm">${monthName}</td>
@@ -359,8 +435,9 @@
                             <td class="py-2 px-2 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-gray-800' : 'text-red-700'}">${formatter.format(row.netProfit * conversionRate)}</td>
                         </tr>`;
                 }).join('');
-
-                const labels = fullReport.map(row => new Date(new Date().getFullYear() - 1, new Date().getMonth() - 11 + row.monthIndex, 1));
+                
+                // FIX: Generate chart labels based on the consistent historicalPeriodStartDate
+                const labels = fullReport.map(row => new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + row.monthIndex, 1));
                 const historicalRevenues = fullReport.filter(r => r.isHistorical).map(r => r.revenue * conversionRate);
                 
                 if (forecastChart) forecastChart.destroy();
@@ -375,7 +452,7 @@
                                 borderColor: 'rgba(239, 68, 68, 0.2)',
                                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
                                 borderWidth: 1,
-                                fill: '+1', // Fill to the optimistic line
+                                fill: '+1',
                             },
                              {
                                 label: 'Optimistic',
@@ -406,12 +483,15 @@
                         ]
                     },
                     options: { 
-                        responsive: true, maintainAspectRatio: false, 
+                        responsive: true, maintainAspectRatio: false,
+                        scales: {
+                            x: { type: 'time', time: { unit: 'month' } },
+                            y: { beginAtZero: true } 
+                        },
                         plugins: { 
                             legend: { position: 'bottom' }, 
-                            title: { display: true, text: `Revenue Forecast & Scenarios (${currentCurrency})` } 
+                            title: { display: true, text: `Revenue Forecast & Scenarios (${currentCurrency})`, font: { size: 16 } } 
                         },
-                        scales: { y: { beginAtZero: true } }
                     }
                 });
 
@@ -422,7 +502,7 @@
                         labels: expenseItems.map(item => item.name),
                         datasets: [{ data: expenseItems.map(item => item.value * conversionRate), backgroundColor: ['#0A2647', '#1c3d6e', '#2e5494', '#406bb9', '#5282de', '#6495ed'] }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, title: {display: true, text: `Expenses (${currentCurrency})`} }}
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, title: {display: true, text: `Expenses (${currentCurrency})`, font: {size: 16}}}}
                 });
             }
 
@@ -431,7 +511,11 @@
                 const inputs = getInputs();
                 let csvContent = "data:text/csv;charset=utf-8,";
                 csvContent += "type,name,value\n";
-                inputs.historicalRevenues.forEach((rev, i) => csvContent += `revenue,Month ${i+1},${rev}\n`);
+                inputs.historicalRevenues.forEach((rev, i) => {
+                    const date = new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + i, 1);
+                    const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
+                    csvContent += `revenue,${monthName},${rev}\n`
+                });
                 inputs.expenseItems.forEach(exp => csvContent += `expense,${exp.name},${exp.value}\n`);
                 Object.keys(inputs).filter(k => !['historicalRevenues', 'expenseItems'].includes(k)).forEach(key => csvContent += `assumption,${key},${inputs[key]}\n`);
 
@@ -455,9 +539,10 @@
                     
                     rows.forEach(row => {
                         const [type, name, value] = row.split(',');
-                        if (type === 'revenue') newRevenues.push(parseFloat(value));
-                        if (type === 'expense') addExpenseCategory(name, parseFloat(value));
-                        if (type === 'assumption') {
+                        if (!type) return;
+                        if (type.trim() === 'revenue') newRevenues.push(parseFloat(value));
+                        if (type.trim() === 'expense') addExpenseCategory(name, parseFloat(value));
+                        if (type.trim() === 'assumption') {
                             const el = document.getElementById(name.replace(/([A-Z])/g, '-$1').toLowerCase());
                             if (el) {
                                 if (el.type === 'checkbox') el.checked = value.trim() === 'true';
@@ -484,15 +569,15 @@
                     const conversionRate = currentCurrency === 'USD' ? SAR_TO_USD_RATE : 1;
 
                     doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor('#0A2647');
-                    doc.text('Confidential Financial Report', 105, 80, { align: 'center' });
-                    doc.setFontSize(16); doc.text(`Prepared for: ${companyName}`, 105, 95, { align: 'center' });
+                    doc.text('Confidential Financial Report', 105, 20, { align: 'center' });
+                    doc.setFontSize(16); doc.text(`Prepared for: ${companyName}`, 105, 30, { align: 'center' });
                     doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
-                    doc.text(`Date of Generation: ${new Date().toLocaleDateString('en-GB')}`, 105, 105, { align: 'center' });
-                    doc.text(`Currency: ${currentCurrency}`, 105, 115, { align: 'center' });
-                    doc.addPage();
+                    doc.text(`Date of Generation: ${new Date().toLocaleDateString('en-GB')}`, 105, 40, { align: 'center' });
+                    doc.text(`Currency: ${currentCurrency}`, 105, 50, { align: 'center' });
+
                     doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-                    doc.text('Executive Summary & Key Projections', 14, 22);
-                    doc.autoTable({ startY: 30, theme: 'plain', body: [
+                    doc.text('Executive Summary & Key Projections', 14, 70);
+                    doc.autoTable({ startY: 75, theme: 'plain', body: [
                         ['Projected Annual Revenue:', formatter.format(kpis.annualRevenue * conversionRate)],
                         ['Projected Net Profit Margin:', `${kpis.netMargin.toFixed(1)}%`],
                         ['Projected Annual VAT Liability:', formatter.format(kpis.vat * conversionRate)],
@@ -502,17 +587,17 @@
                     const forecastChartImg = forecastChart.toBase64Image('image/png', 1.0);
                     const expenseChartImg = expenseChart.toBase64Image('image/png', 1.0);
                     doc.addImage(forecastChartImg, 'PNG', 14, doc.autoTable.previous.finalY + 10, 180, 90);
-                    doc.addImage(expenseChartImg, 'PNG', 14, doc.autoTable.previous.finalY + 110, 80, 80);
                     doc.addPage();
+                    doc.addImage(expenseChartImg, 'PNG', 14, 20, 80, 80);
                     
                     const reportData = fullReport.map(row => {
-                        const date = new Date(new Date().getFullYear() - 1, new Date().getMonth() - 11 + row.monthIndex, 1);
+                        const date = new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + row.monthIndex, 1);
                         return [ date.toLocaleString('default', { month: 'short', year: '2-digit' }),
                             formatter.format(row.revenue * conversionRate), formatter.format(row.grossProfit * conversionRate), formatter.format(row.netProfit * conversionRate) ];
                     });
                     doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-                    doc.text(`Detailed Financial Projections (${currentCurrency})`, 14, 22);
-                    doc.autoTable({ startY: 30, head: [['Month', 'Revenue', 'Gross Profit', 'Net Profit']], body: reportData, theme: 'striped', headStyles: { fillColor: [10, 38, 71] }});
+                    doc.text(`Detailed Financial Projections (${currentCurrency})`, 14, 110);
+                    doc.autoTable({ startY: 115, head: [['Month', 'Revenue', 'Gross Profit', 'Net Profit']], body: reportData, theme: 'striped', headStyles: { fillColor: [10, 38, 71] }});
                     doc.save(`${companyName.replace(/ /g, '_')}_Financial_Report.pdf`);
                 } catch (error) { console.error("Failed to generate PDF:", error); alert("An error occurred generating the PDF."); }
             }
