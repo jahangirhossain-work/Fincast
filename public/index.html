@@ -358,6 +358,15 @@
                 return new Promise((resolve) => {
                     setTimeout(() => {
                         const historical = payload.historicalRevenues;
+                        if (historical.length < 12 || historical[0] === 0) {
+                            // Handle case with insufficient or zero initial data to prevent errors
+                            const emptyResponse = {
+                                kpis: { annualRevenue: 0, netMargin: 0, vat: 0, zakat: 0 },
+                                fullReport: [],
+                                forecastedRevenues: { baseline: [], optimistic: [], pessimistic: [] }
+                            };
+                            return resolve(emptyResponse);
+                        }
                         const avgGrowth = (historical[11] / historical[0]) ** (1/11);
                         const baselineForecast = [];
                         for(let i=0; i<12; i++) {
@@ -479,7 +488,7 @@
                             },
                             {
                                 label: 'Forecast',
-                                data: Array(11).fill(null).concat(historicalRevenues[11], forecastedRevenues.baseline.map(r => r * conversionRate)),
+                                data: Array(11).fill(null).concat(historicalRevenues.length > 11 ? historicalRevenues[11] : null, forecastedRevenues.baseline.map(r => r * conversionRate)),
                                 borderColor: '#3b82f6',
                                 borderWidth: 3,
                                 borderDash: [5, 5],
@@ -550,7 +559,8 @@
                 reader.onload = function(e) {
                     const rows = e.target.result.split('\n').slice(1); // Skip header
                     const newRevenues = [];
-                    expenseCategoriesContainer.innerHTML = '<h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>';
+                    const expenseContainer = document.getElementById('expense-categories');
+                    expenseContainer.innerHTML = '<h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>'; // Clear previous
                     
                     rows.forEach(row => {
                         const [type, name, value] = row.split(',');
@@ -619,7 +629,10 @@
             
             // --- EVENT LISTENERS ---
             document.getElementById('app').addEventListener('input', runForecast);
-            addExpenseBtn.addEventListener('click', () => addExpenseCategory());
+            addExpenseBtn.addEventListener('click', () => {
+                addExpenseCategory();
+                runForecast(); // Re-run forecast when a new expense is added
+            });
             downloadPdfBtn.addEventListener('click', downloadPDF);
             exportCsvBtn.addEventListener('click', exportToCSV);
             importCsvInput.addEventListener('change', importFromCSV);
