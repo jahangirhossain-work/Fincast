@@ -68,14 +68,19 @@ function holtWinters(data, forecast_length, season_length, alpha, beta, gamma) {
     // Calculate initial seasonal components
     const seasonal = Array.from({ length: season_length });
     const seasonAverages = Array(season_length).fill(0);
-    const "n_seasons" = Math.floor(data.length / season_length);
-    for (let i = 0; i < "n_seasons"; i++) {
+    
+    // **FIX**: Removed quotes from "n_seasons"
+    const n_seasons = Math.floor(data.length / season_length);
+    
+    for (let i = 0; i < n_seasons; i++) {
         for (let j = 0; j < season_length; j++) {
             seasonAverages[j] += data[i * season_length + j];
         }
     }
     for (let i = 0; i < season_length; i++) {
-        seasonal[i] = seasonAverages[i] / ("n_seasons" * level) || 1;
+        // **FIX**: Guard against division by zero
+        const avg = seasonAverages[i] / n_seasons;
+        seasonal[i] = avg / (level || 1) || 1;
     }
 
     const internalForecast = [];
@@ -87,9 +92,9 @@ function holtWinters(data, forecast_length, season_length, alpha, beta, gamma) {
         const season_index = i % season_length;
         const last_seasonal = seasonal[season_index];
 
-        level = alpha * (value / last_seasonal) + (1 - alpha) * (last_level + last_trend);
+        level = alpha * (value / (last_seasonal || 1)) + (1 - alpha) * (last_level + last_trend);
         trend = beta * (level - last_level) + (1 - beta) * last_trend;
-        seasonal[season_index] = gamma * (value / level) + (1 - gamma) * last_seasonal;
+        seasonal[season_index] = gamma * (value / (level || 1)) + (1 - gamma) * last_seasonal;
 
         // Use last_level, last_trend, last_seasonal for internal forecast
         internalForecast.push(Math.max(0, (last_level + last_trend) * last_seasonal));
