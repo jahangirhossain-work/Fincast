@@ -535,6 +535,7 @@
                     <button id="show-contact-modal" class="bg-[#FFB830] text-[#0A2647] py-2 px-5 rounded-lg hover:bg-yellow-500 transition duration-300 font-semibold hidden sm:block">
                         Get Full Analysis
                     </button>
+                    <!-- MOVED: Profile icon is now after logout -->
                     <button id="logout-button" class="bg-red-600 text-white py-2 px-5 rounded-lg hover:bg-red-700 transition duration-300 font-semibold">
                         Logout
                     </button>
@@ -606,6 +607,21 @@
                                 <input type="number" id="zakat-base" value="500000" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
                             </div>
                             <hr>
+                            <!-- NEW: Cash Flow Assumptions -->
+                            <h3 class="font-bold text-lg text-gray-800">Cash Flow Assumptions</h3>
+                            <div>
+                                <label for="opening-cash-balance" class="font-semibold text-gray-700 block mb-1">Opening Bank Balance (SAR)</label>
+                                <input type="number" id="opening-cash-balance" value="50000" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            </div>
+                            <div>
+                                <label for="revenue-lag-days" class="font-semibold text-gray-700 block mb-1">Revenue Collection Lag (Days)</label>
+                                <input type="number" id="revenue-lag-days" value="30" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            </div>
+                            <div>
+                                <label for="expense-lag-days" class="font-semibold text-gray-700 block mb-1">Expense Payment Lag (Days)</label>
+                                <input type="number" id="expense-lag-days" value="15" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            </div>
+                            <hr>
                             <h3 class="font-bold text-lg text-gray-800">Scenario Analysis</h3>
                              <div>
                                 <label for="optimistic-modifier" class="font-semibold text-gray-700 block mb-1">Optimistic Revenue Modifier (%)</label>
@@ -624,18 +640,20 @@
                                 <h3 class="text-sm font-semibold text-gray-500">Projected Annual Revenue</h3>
                                 <p id="kpi-annual-revenue" class="text-xl font-bold text-[#0A2647]">SAR 0</p>
                             </div>
+                            <!-- NEW: Cash Balance KPI -->
+                            <div class="bg-white p-4 rounded-lg shadow-sm kpi-card" style="border-left-color: #10B981;">
+                                <h3 class="text-sm font-semibold text-gray-500">Projected Cash Balance</h3>
+                                <p id="kpi-cash-balance" class="text-xl font-bold text-green-600">SAR 0</p>
+                            </div>
                             <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
                                 <h3 class="text-sm font-semibold text-gray-500">Net Profit Margin</h3>
                                 <p id="kpi-net-margin" class="text-xl font-bold text-[#0A2647]">0%</p>
-                            </div>
-                            <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
-                                <h3 class="text-sm font-semibold text-gray-500">Projected VAT Liability</h3>
-                                <p id="kpi-vat" class="text-xl font-bold text-red-600">SAR 0</p>
                             </div>
                              <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
                                 <h3 class="text-sm font-semibold text-gray-500">Annual Zakat Due</h3>
                                 <p id="kpi-zakat" class="text-xl font-bold text-red-600">SAR 0</p>
                             </div>
+                            <!-- Removed VAT KPI to make space, as it's part of cash flow -->
                         </div>
                         
                         <!-- Charts --><div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -664,9 +682,10 @@
                                     <thead class="bg-gray-100">
                                         <tr>
                                             <th class="py-2 px-2 border-b text-left text-sm font-semibold">Month</th>
-                                            <th class="py-2 px-2 border-b text-right text-sm font-semibold">Revenue</th>
-                                            <th class="py-2 px-2 border-b text-right text-sm font-semibold">Gross Profit</th>
-                                            <th class="py-2 px-2 border-b text-right text-sm font-semibold">Net Profit (After Tax)</th>
+                                            <th class="py-2 px-2 border-b text-right text-sm font-semibold">Revenue (P&L)</th>
+                                            <th class="py-2 px-2 border-b text-right text-sm font-semibold">Net Profit (P&L)</th>
+                                            <!-- NEW: Cash Balance Column -->
+                                            <th class="py-2 px-2 border-b text-right text-sm font-semibold">Cash Balance (EOP)</th>
                                         </tr>
                                     </thead>
                                     <tbody id="report-table-body">
@@ -901,6 +920,11 @@
                     cogsPercent: parseFloat(document.getElementById('cogs-percent').value) || 0,
                     applyVat: document.getElementById('apply-vat').checked,
                     zakatBase: parseFloat(document.getElementById('zakat-base').value) || 0,
+                    // Cash Flow Inputs
+                    openingCashBalance: parseFloat(document.getElementById('opening-cash-balance').value) || 0,
+                    revenueLagDays: parseFloat(document.getElementById('revenue-lag-days').value) || 0,
+                    expenseLagDays: parseFloat(document.getElementById('expense-lag-days').value) || 0,
+                    // Scenario Inputs
                     optimisticModifier: parseFloat(document.getElementById('optimistic-modifier').value) || 0,
                     pessimisticModifier: parseFloat(document.getElementById('pessimistic-modifier').value) || 0,
                     expenseItems: Array.from(document.querySelectorAll('.expense-item')).map(el => ({
@@ -921,9 +945,6 @@
             
             /**
              * Performs linear regression on a set of (x, y) data points.
-             * @param {number[]} y - The array of y-values (e.g., revenue).
-             * @param {number[]} [x] - Optional array of x-values (e.g., time periods). If not provided, 0, 1, 2... is used.
-             * @returns {{slope: number, intercept: number, predict: function(number): number}}
              */
             function linearRegression(y, x) {
                 const n = y.length;
@@ -951,8 +972,6 @@
 
             /**
              * Generates a 12-month forecast based on historical data using seasonal decomposition and trend analysis.
-             * @param {number[]} historical - 12 months of historical revenue data.
-             * @returns {number[]} - A 12-month baseline forecast.
              */
             function generateBaselineForecast(historical) {
                 if (historical.length < 12 || historical.every(v => v === 0)) {
@@ -960,33 +979,49 @@
                     return Array(12).fill(0);
                 }
                 
-                // 1. Calculate 12-month moving average (to find trend)
-                // Since we only have 12 months, we can't use a centered moving average.
-                // We'll estimate the trend using linear regression on the whole dataset.
-                
-                // 2. De-trend the data to find seasonal component
                 const trend = linearRegression(historical);
                 const deTrended = historical.map((val, i) => val - trend.predict(i));
-
-                // 3. Calculate seasonal factors
-                // For 12 months, the seasonal factor is just the average deviation for that month.
-                // With only 1 year, we assume the seasonal component is this de-trended value.
-                // A better model would average this over multiple years.
                 const seasonalFactors = deTrended; 
 
-                // 4. Project the trend forward
                 const trendForecast = [];
                 for (let i = 0; i < 12; i++) {
                     trendForecast.push(trend.predict(i + 12)); // Predict the next 12 periods
                 }
 
-                // 5. Re-apply seasonality to the forecasted trend
                 const baselineForecast = trendForecast.map((trendVal, i) => {
                     const seasonalComponent = seasonalFactors[i]; // Use the corresponding month's seasonal factor
                     return Math.max(0, trendVal + seasonalComponent); // Add trend and seasonality
                 });
 
                 return baselineForecast;
+            }
+            
+            /**
+             * Helper to shift an array of monthly values by a number of days
+             */
+            function shiftCashFlow(monthlyValues, lagDays) {
+                const lagMonths = lagDays / 30.44; // Average days per month
+                const fullMonths = Math.floor(lagMonths);
+                const partialMonthFraction = lagMonths - fullMonths;
+                
+                const shiftedValues = Array(monthlyValues.length).fill(0);
+
+                for (let i = 0; i < monthlyValues.length; i++) {
+                    const value = monthlyValues[i];
+                    
+                    // Add portion to the next full month
+                    const targetMonth1 = i + fullMonths;
+                    if (targetMonth1 < shiftedValues.length) {
+                        shiftedValues[targetMonth1] += value * (1 - partialMonthFraction);
+                    }
+                    
+                    // Add partial portion to the month after
+                    const targetMonth2 = targetMonth1 + 1;
+                    if (targetMonth2 < shiftedValues.length) {
+                        shiftedValues[targetMonth2] += value * partialMonthFraction;
+                    }
+                }
+                return shiftedValues;
             }
 
             /**
@@ -997,13 +1032,9 @@
                 return new Promise((resolve) => {
                     setTimeout(() => {
                         const {
-                            historicalRevenues,
-                            cogsPercent,
-                            applyVat,
-                            zakatBase,
-                            optimisticModifier,
-                            pessimisticModifier,
-                            expenseItems
+                            historicalRevenues, cogsPercent, applyVat, zakatBase,
+                            openingCashBalance, revenueLagDays, expenseLagDays,
+                            optimisticModifier, pessimisticModifier, expenseItems
                         } = payload;
 
                         if (!historicalRevenues || historicalRevenues.length !== 12) {
@@ -1012,6 +1043,7 @@
                         
                         // 1. Generate the baseline forecast
                         const baselineForecast = generateBaselineForecast(historicalRevenues);
+                        const allRevenues = [...historicalRevenues, ...baselineForecast]; // Full 24-month revenue
                         
                         // 2. Create optimistic and pessimistic scenarios
                         const forecastedRevenues = {
@@ -1024,42 +1056,90 @@
                         const monthlyOpEx = expenseItems.reduce((sum, item) => sum + item.value, 0);
                         const annualZakat = zakatBase * 0.025;
                         const fullReport = [];
-                        let totalForecastedRevenue = 0, totalForecastedNetProfit = 0, totalVat = 0;
-                        const allRevenues = [...historicalRevenues, ...baselineForecast];
+                        
+                        let totalForecastedRevenue = 0, totalForecastedNetProfit = 0, totalVatLiability = 0;
+                        
+                        // 4. Create 24-month arrays for P&L items
+                        const pnlRevenue = allRevenues;
+                        const pnlCogs = pnlRevenue.map(rev => rev * (cogsPercent / 100));
+                        const pnlGrossProfit = pnlRevenue.map((rev, i) => rev - pnlCogs[i]);
+                        const pnlOpex = Array(24).fill(monthlyOpEx);
+                        const pnlVat = pnlRevenue.map(rev => (applyVat ? rev * 0.15 : 0));
+                        const pnlZakat = Array(24).fill(0);
+                        pnlZakat[23] = annualZakat; // P&L shows Zakat as expense at year-end
+                        
+                        // 5. Create 24-month arrays for CASH items (by shifting P&L)
+                        const cashInRevenue = shiftCashFlow(pnlRevenue, revenueLagDays);
+                        const cashOutCogs = shiftCashFlow(pnlCogs, expenseLagDays);
+                        const cashOutOpex = shiftCashFlow(pnlOpex, expenseLagDays);
+                        
+                        // Model VAT & Zakat cash payments (KSA Rules)
+                        // VAT is paid quarterly (e.g., Q1 VAT paid in April)
+                        // Zakat is paid annually
+                        const cashOutVat = Array(24).fill(0);
+                        const cashOutZakat = Array(24).fill(0);
 
                         for (let i = 0; i < 24; i++) {
-                            const isHistorical = i < 12;
-                            const revenue = allRevenues[i];
-                            const cogs = revenue * (cogsPercent / 100);
-                            const grossProfit = revenue - cogs;
-                            const vatOnRevenue = applyVat ? revenue * 0.15 : 0;
-                            // Note: In KSA, VAT on OpEx could be reclaimed, but this is a simplified P&L.
-                            
-                            // Zakat is applied annually on the zakat base, not monthly profit.
-                            // We show it as a single expense at the end of the year for P&L impact.
-                            const zakatForMonth = (!isHistorical && i === 23) ? annualZakat : 0; 
+                            // Historical period: assume VAT/Zakat was paid
+                            if (i >= 12) {
+                                // Forecast period
+                                totalVatLiability += pnlVat[i];
+                                
+                                // VAT Payment Logic (Quarterly)
+                                // Q1 (Months 12, 13, 14) paid in Month 15 (April)
+                                // Q2 (Months 15, 16, 17) paid in Month 18 (July)
+                                // Q3 (Months 18, 19, 20) paid in Month 21 (Oct)
+                                // Q4 (Months 21, 22, 23) paid in Month 24 (Jan - outside our scope, but liability is calculated)
+                                if (i === 14) cashOutVat[15] = pnlVat[12] + pnlVat[13] + pnlVat[14];
+                                if (i === 17) cashOutVat[18] = pnlVat[15] + pnlVat[16] + pnlVat[17];
+                                if (i === 20) cashOutVat[21] = pnlVat[18] + pnlVat[19] + pnlVat[20];
+                                
+                                // Zakat Payment (Annually)
+                                if (i === 23) cashOutZakat[23] = annualZakat;
+                            }
+                        }
+                        
+                        // 6. Calculate running cash balance
+                        const cashBalance = Array(24).fill(0);
+                        cashBalance[0] = openingCashBalance + cashInRevenue[0] - cashOutCogs[0] - cashOutOpex[0] - cashOutVat[0] - cashOutZakat[0];
 
-                            const netProfit = grossProfit - monthlyOpEx - zakatForMonth; // VAT is a balance sheet item, not P&L expense
+                        for(let i = 1; i < 24; i++) {
+                            cashBalance[i] = cashBalance[i-1] + cashInRevenue[i] - cashOutCogs[i] - cashOutOpex[i] - cashOutVat[i] - cashOutZakat[i];
+                        }
+
+                        // 7. Compile the final report
+                        for (let i = 0; i < 24; i++) {
+                            const isHistorical = i < 12;
+                            const netProfit = pnlGrossProfit[i] - pnlOpex[i] - pnlZakat[i]; // P&L calculation
 
                             if (!isHistorical) {
-                                totalForecastedRevenue += revenue;
-                                totalVat += vatOnRevenue; // This is the liability calculation
-                                totalForecastedNetProfit += netProfit; // This is profit before interest/corp tax (if any)
+                                totalForecastedRevenue += pnlRevenue[i];
+                                totalForecastedNetProfit += netProfit;
                             }
-                            fullReport.push({ monthIndex: i, isHistorical, revenue, grossProfit, netProfit });
+                            
+                            fullReport.push({ 
+                                monthIndex: i, 
+                                isHistorical, 
+                                revenue: pnlRevenue[i], 
+                                grossProfit: pnlGrossProfit[i], 
+                                netProfit: netProfit,
+                                cashBalance: cashBalance[i] // Add cash balance
+                            });
                         }
                         
                         const netProfitMargin = totalForecastedRevenue > 0 ? (totalForecastedNetProfit / totalForecastedRevenue) * 100 : 0;
+                        const finalCashBalance = cashBalance[23]; // Get the last month's cash balance
 
                         resolve({
                             kpis: {
                                 annualRevenue: totalForecastedRevenue,
                                 netMargin: netProfitMargin,
-                                vat: totalVat,
+                                vat: totalVatLiability, // Total liability accrued
                                 zakat: annualZakat,
+                                cashBalance: finalCashBalance // New KPI
                             },
                             forecastedRevenues,
-                            fullReport
+                            fullReport // This now contains cash balance data
                         });
 
                     }, 500); // Simulate network delay
@@ -1103,22 +1183,31 @@
 
                 document.getElementById('kpi-annual-revenue').textContent = formatter.format(kpis.annualRevenue * conversionRate);
                 document.getElementById('kpi-net-margin').textContent = `${kpis.netMargin.toFixed(1)}%`;
-                document.getElementById('kpi-vat').textContent = formatter.format(kpis.vat * conversionRate);
+                // document.getElementById('kpi-vat').textContent = formatter.format(kpis.vat * conversionRate); // Removed to make space
                 document.getElementById('kpi-zakat').textContent = formatter.format(kpis.zakat * conversionRate);
+                // Update new Cash Balance KPI
+                const kpiCashEl = document.getElementById('kpi-cash-balance');
+                kpiCashEl.textContent = formatter.format(kpis.cashBalance * conversionRate);
+                kpiCashEl.classList.toggle('text-green-600', kpis.cashBalance >= 0);
+                kpiCashEl.classList.toggle('text-red-600', kpis.cashBalance < 0);
+
                 
                 tableBody.innerHTML = fullReport.map(row => {
                     const date = new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + row.monthIndex, 1);
                     const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
+                    const cashBalanceFormatted = formatter.format(row.cashBalance * conversionRate);
                     return `<tr class="border-b hover:bg-gray-50 ${row.isHistorical ? 'bg-gray-50' : ''}">
                             <td class="py-2 px-2 text-sm">${monthName}</td>
                             <td class="py-2 px-2 text-right text-sm font-medium ${row.isHistorical ? 'text-gray-700' : 'text-blue-600'}">${formatter.format(row.revenue * conversionRate)}</td>
-                            <td class="py-2 px-2 text-right text-sm">${formatter.format(row.grossProfit * conversionRate)}</td>
                             <td class="py-2 px-2 text-right text-sm font-bold ${row.netProfit >= 0 ? 'text-gray-800' : 'text-red-700'}">${formatter.format(row.netProfit * conversionRate)}</td>
+                            <!-- New Cash Balance Column -->
+                            <td class="py-2 px-2 text-right text-sm font-bold ${row.cashBalance >= 0 ? 'text-green-700' : 'text-red-700'}">${cashBalanceFormatted}</td>
                         </tr>`;
                 }).join('');
                 
                 const labels = fullReport.map(row => new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + row.monthIndex, 1));
                 const historicalRevenues = fullReport.filter(r => r.isHistorical).map(r => r.revenue * conversionRate);
+                const cashBalanceData = fullReport.map(r => r.cashBalance * conversionRate); // Get cash data
                 
                 if (forecastChart) forecastChart.destroy();
                 forecastChart = new Chart(forecastCtx, {
@@ -1126,51 +1215,74 @@
                     data: {
                         labels,
                         datasets: [
-                            {
-                                label: 'Pessimistic',
-                                data: Array(12).fill(null).concat(forecastedRevenues.pessimistic.map(r => r * conversionRate)),
-                                borderColor: 'rgba(239, 68, 68, 0.2)',
-                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                                borderWidth: 1,
-                                fill: '+1',
-                            },
                              {
-                                label: 'Optimistic',
-                                data: Array(12).fill(null).concat(forecastedRevenues.optimistic.map(r => r * conversionRate)),
-                                borderColor: 'rgba(34, 197, 94, 0.2)',
-                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                                borderWidth: 1,
-                                fill: false,
-                            },
-                            {
-                                label: 'Forecast',
+                                label: 'Forecast (Revenue)',
                                 data: Array(11).fill(null).concat(historicalRevenues.length > 11 ? historicalRevenues[11] : null, forecastedRevenues.baseline.map(r => r * conversionRate)),
                                 borderColor: '#3b82f6',
                                 borderWidth: 3,
                                 borderDash: [5, 5],
                                 pointBackgroundColor: '#3b82f6',
                                 pointRadius: 3,
+                                yAxisID: 'y', // Assign to the default y-axis
                             },
                              {
-                                label: 'Historical',
+                                label: 'Historical (Revenue)',
                                 data: historicalRevenues,
                                 borderColor: '#0A2647',
                                 backgroundColor: '#0A2647',
                                 borderWidth: 3,
                                 tension: 0.3,
                                 fill: false,
+                                yAxisID: 'y', // Assign to the default y-axis
+                            },
+                            // NEW: Cash Balance Line
+                            {
+                                label: 'Cash Balance',
+                                data: cashBalanceData,
+                                borderColor: '#10B981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                borderWidth: 3,
+                                tension: 0.3,
+                                fill: true,
+                                yAxisID: 'y1', // Assign to the new y-axis
                             },
                         ]
                     },
                     options: { 
                         responsive: true, maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
                         scales: {
                             x: { type: 'time', time: { unit: 'month' } },
-                            y: { beginAtZero: true } 
+                            y: { // Left Y-Axis (for Revenue)
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: `Revenue (${currentCurrency})`
+                                }
+                            },
+                            y1: { // Right Y-Axis (for Cash)
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: `Cash (${currentCurrency})`
+                                },
+                                // Ensure cash axis is not stacked on revenue axis
+                                grid: {
+                                    drawOnChartArea: false, // Only draw the grid for the main axis
+                                },
+                            }
                         },
                         plugins: { 
                             legend: { position: 'bottom' }, 
-                            title: { display: true, text: `Revenue Forecast & Scenarios (${currentCurrency})`, font: { size: 16 } } 
+                            title: { display: true, text: `P&L vs. Cash Flow Forecast (${currentCurrency})`, font: { size: 16 } } 
                         },
                     }
                 });
@@ -1188,6 +1300,8 @@
 
             // --- CSV & PDF ---
             function exportToCSV() {
+                // This function will need an update if you want to export the new cash flow data
+                // For now, it exports the inputs
                 const inputs = getInputs();
                 let csvContent = "data:text/csv;charset=utf-8,";
                 csvContent += "type,name,value\n";
@@ -1197,7 +1311,14 @@
                     csvContent += `revenue,${monthName},${rev}\n`
                 });
                 inputs.expenseItems.forEach(exp => csvContent += `expense,${exp.name},${exp.value}\n`);
-                Object.keys(inputs).filter(k => !['historicalRevenues', 'expenseItems'].includes(k)).forEach(key => csvContent += `assumption,${key},${inputs[key]}\n`);
+                
+                // Add all assumptions, including new cash flow ones
+                const assumptions = ['cogsPercent', 'applyVat', 'zakatBase', 'openingCashBalance', 'revenueLagDays', 'expenseLagDays', 'optimisticModifier', 'pessimisticModifier'];
+                assumptions.forEach(key => {
+                    if (inputs[key] !== undefined) {
+                         csvContent += `assumption,${key},${inputs[key]}\n`
+                    }
+                });
 
                 const encodedUri = encodeURI(csvContent);
                 const link = document.createElement("a");
@@ -1220,14 +1341,28 @@
                     
                     rows.forEach(row => {
                         const [type, name, value] = row.split(',');
-                        if (!type) return;
-                        if (type.trim() === 'revenue') newRevenues.push(parseFloat(value));
-                        if (type.trim() === 'expense') addExpenseCategory(name, parseFloat(value));
-                        if (type.trim() === 'assumption') {
-                            const el = document.getElementById(name.replace(/([A-Z])/g, '-$1').toLowerCase());
+                        if (!type || !name) return;
+                        
+                        const trimmedType = type.trim();
+                        const trimmedName = name.trim();
+                        const trimmedValue = value ? value.trim() : '';
+
+                        if (trimmedType === 'revenue') {
+                            newRevenues.push(parseFloat(trimmedValue));
+                        } else if (trimmedType === 'expense') {
+                            addExpenseCategory(trimmedName, parseFloat(trimmedValue));
+                        } else if (trimmedType === 'assumption') {
+                            // Convert camelCase name from CSV to kebab-case ID
+                            const elId = trimmedName.replace(/([A-Z])/g, '-$1').toLowerCase();
+                            const el = document.getElementById(elId);
                             if (el) {
-                                if (el.type === 'checkbox') el.checked = value.trim() === 'true';
-                                else el.value = value;
+                                if (el.type === 'checkbox') {
+                                    el.checked = trimmedValue === 'true';
+                                } else {
+                                    el.value = trimmedValue;
+                                }
+                            } else {
+                                console.warn(`Could not find element for assumption: ${trimmedName} (ID: ${elId})`);
                             }
                         }
                     });
@@ -1242,7 +1377,6 @@
 
             function downloadPDF() {
                 if (!lastApiResponse.kpis || !forecastChart || !expenseChart) { 
-                    // Don't use alert()
                     console.warn('PDF Download Error: Forecast not generated yet.'); 
                     return; 
                 }
@@ -1262,10 +1396,11 @@
 
                     doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
                     doc.text('Executive Summary & Key Projections', 14, 70);
+                    // Updated autoTable to include cash balance
                     doc.autoTable({ startY: 75, theme: 'plain', body: [
-                        ['Projected Annual Revenue:', formatter.format(kpis.annualRevenue * conversionRate)],
-                        ['Projected Net Profit Margin:', `${kpis.netMargin.toFixed(1)}%`],
-                        ['Projected Annual VAT Liability:', formatter.format(kpis.vat * conversionRate)],
+                        ['Projected Annual Revenue (P&L):', formatter.format(kpis.annualRevenue * conversionRate)],
+                        ['Projected Net Profit Margin (P&L):', `${kpis.netMargin.toFixed(1)}%`],
+                        ['Projected EOY Cash Balance:', formatter.format(kpis.cashBalance * conversionRate)],
                         ['Projected Annual Zakat Due:', formatter.format(kpis.zakat * conversionRate)],
                     ], styles: { fontSize: 12 }, columnStyles: { 0: { fontStyle: 'bold' } } });
                     
@@ -1277,12 +1412,23 @@
                     
                     const reportData = fullReport.map(row => {
                         const date = new Date(historicalPeriodStartDate.getFullYear(), historicalPeriodStartDate.getMonth() + row.monthIndex, 1);
-                        return [ date.toLocaleString('default', { month: 'short', year: '2-digit' }),
-                            formatter.format(row.revenue * conversionRate), formatter.format(row.grossProfit * conversionRate), formatter.format(row.netProfit * conversionRate) ];
+                        return [ 
+                            date.toLocaleString('default', { month: 'short', year: '2-digit' }),
+                            formatter.format(row.revenue * conversionRate), 
+                            formatter.format(row.netProfit * conversionRate),
+                            formatter.format(row.cashBalance * conversionRate) // Add cash balance to PDF table
+                        ];
                     });
                     doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
                     doc.text(`Detailed Financial Projections (${currentCurrency})`, 14, 110);
-                    doc.autoTable({ startY: 115, head: [['Month', 'Revenue', 'Gross Profit', 'Net Profit']], body: reportData, theme: 'striped', headStyles: { fillColor: [10, 38, 71] }});
+                    // Updated PDF table headers
+                    doc.autoTable({ 
+                        startY: 115, 
+                        head: [['Month', 'Revenue (P&L)', 'Net Profit (P&L)', 'Cash Balance (EOP)']], 
+                        body: reportData, 
+                        theme: 'striped', 
+                        headStyles: { fillColor: [10, 38, 71] }
+                    });
                     doc.save(`${companyName.replace(/ /g, '_')}_Financial_Report.pdf`);
                 } catch (error) { console.error("Failed to generate PDF:", error); }
             }
