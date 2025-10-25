@@ -11,6 +11,192 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword,
+            sendEmailVerification,
+            signOut 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Your web app's Firebase configuration from your screenshot
+        const firebaseConfig = {
+          apiKey: "AIzaSyA_4vxHARnQxPYOI3EUkbbukDjJZDJSar4",
+          authDomain: "fincast-983c8.firebaseapp.com",
+          projectId: "fincast-983c8",
+          storageBucket: "fincast-983c8.firebasestorage.app",
+          messagingSenderId: "185506506213",
+          appId: "1:185506506213:web:b15887d0da75ce357d3b0c",
+          measurementId: "G-PWHJ50CK9B"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        setLogLevel('Debug'); // Enable Firestore debug logging
+
+        // --- App ID for Firestore ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- DOM Elements for Auth ---
+        const authContainer = document.getElementById('auth-container');
+        const appContainer = document.getElementById('app-container');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const showRegisterBtn = document.getElementById('show-register');
+        const showLoginBtn = document.getElementById('show-login');
+        const authMessage = document.getElementById('auth-message');
+        const verificationMessage = document.getElementById('verification-message');
+        const resendVerificationBtn = document.getElementById('resend-verification');
+        const logoutBtn = document.getElementById('logout-button');
+        
+        // --- Auth UI Toggling ---
+        showRegisterBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginForm.classList.add('hidden');
+            registerForm.classList.remove('hidden');
+            authMessage.textContent = '';
+        });
+        showLoginBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginForm.classList.remove('hidden');
+            registerForm.classList.add('hidden');
+            authMessage.textContent = '';
+        });
+
+        // --- Auth Message Helper ---
+        function setAuthMessage(message, isError = true) {
+            authMessage.textContent = message;
+            if (isError) authMessage.classList.add('text-red-500');
+            else authMessage.classList.remove('text-red-500');
+        }
+
+        // --- Registration Logic ---
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = registerForm.name.value;
+            const email = registerForm.email.value;
+            const phone = registerForm.phone.value;
+            const company = registerForm.company.value;
+            const password = registerForm.password.value;
+            
+            setAuthMessage('Registering...', false);
+
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                
+                // Save additional user info to Firestore
+                // FIX: Path must point to a document (even segments).
+                // We create a doc named 'details' inside the 'profile' collection.
+                const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'details');
+                
+                // DEBUG: Log the exact path being used
+                console.log('Attempting to write user profile to path:', userProfileRef.path);
+
+                await setDoc(userProfileRef, {
+                    name: name,
+                    email: email,
+                    phone: phone,
+                    company: company,
+                    createdAt: new Date()
+                });
+
+                // Send verification email
+                await sendEmailVerification(user);
+                
+                setAuthMessage('Registration successful! Please check your email to verify your account.', false);
+                loginForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+
+            } catch (error) {
+                console.error("Registration Error:", error);
+                setAuthMessage(error.message);
+            }
+        });
+
+        // --- Login Logic ---
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = loginForm.email.value;
+            const password = loginForm.password.value;
+            setAuthMessage('Signing in...', false);
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // Auth state change will handle showing the app
+            } catch (error) {
+                console.error("Login Error:", error);
+                setAuthMessage(error.message);
+            }
+        });
+
+        // --- Logout Logic ---
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                // Auth state change will handle showing the login page
+            } catch (error) {
+                console.error("Logout Error:", error);
+            }
+        });
+
+        // --- Auth State Listener (Controls UI) ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // User is signed in
+                if (user.emailVerified) {
+                    // --- User is signed in AND verified ---
+                    authContainer.classList.add('hidden');
+                    appContainer.classList.remove('hidden');
+                    // Initialize the main app now that the user is in
+                    initializeAppLogic(); 
+                } else {
+                    // --- User is signed in but NOT verified ---
+                    authContainer.classList.remove('hidden');
+                    appContainer.classList.add('hidden');
+                    loginForm.classList.add('hidden');
+                    registerForm.classList.add('hidden');
+                    verificationMessage.classList.remove('hidden');
+                }
+            } else {
+                // --- User is signed out ---
+                authContainer.classList.remove('hidden');
+                appContainer.classList.add('hidden');
+                loginForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+                verificationMessage.classList.add('hidden');
+                authMessage.textContent = '';
+            }
+        });
+
+        // --- Resend Verification ---
+        resendVerificationBtn.addEventListener('click', async () => {
+            if (auth.currentUser) {
+                try {
+                    await sendEmailVerification(auth.currentUser);
+                    setAuthMessage('New verification email sent!', false);
+                } catch (error) {
+                    setAuthMessage(error.message);
+                }
+            }
+        });
+
+    </script>
+    
     <style>
         body {
             font-family: 'Poppins', sans-serif;
@@ -28,7 +214,7 @@
             color: #0A2647;
             font-weight: 600;
         }
-        /* Added rules to hide number input spinners */
+        /* Hide number input arrows */
         input[type="number"]::-webkit-inner-spin-button, 
         input[type="number"]::-webkit-outer-spin-button { 
             -webkit-appearance: none; 
@@ -41,92 +227,80 @@
 </head>
 <body class="text-gray-800 bg-gray-50 flex flex-col min-h-screen">
 
-    <!-- 
-      ================================================================
-      AUTH CONTAINER (NEW)
-      This container is shown to logged-out users.
-      ================================================================
-    -->
-    <div id="auth-container" class="hidden min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0A2647] to-[#1B3A5F] p-4">
-        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
+    <!-- Auth Container -->
+    <div id="auth-container" class="flex items-center justify-center min-h-screen bg-[#0A2647]">
+        <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-xl">
             
-            <!-- Logo -->
-            <a href="#" class="text-3xl font-bold text-[#0A2647] text-center block mb-6">
-                Fin-Cast<span class="text-[#FFB830]">.</span>
-            </a>
+            <div class="text-center">
+                <a href="#" class="text-3xl font-bold text-[#0A2647]">
+                    Fin-Cast<span class="text-[#FFB830]">.</span>
+                </a>
+            </div>
 
-            <!-- Error Message Box -->
-            <div id="auth-error" class="hidden p-3 rounded-lg bg-red-100 text-red-700 text-sm mb-4"></div>
-            <!-- Success Message Box (for verification) -->
-            <div id="auth-success" class="hidden p-3 rounded-lg bg-green-100 text-green-700 text-sm mb-4"></div>
+            <!-- Auth Error Message -->
+            <div id="auth-message" class="text-center font-medium text-red-500"></div>
+
+            <!-- Email Verification Message -->
+            <div id="verification-message" class="hidden text-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h3 class="font-bold text-yellow-800">Verify Your Email</h3>
+                <p class="text-sm text-yellow-700 mt-2">
+                    A verification link has been sent to your email. Please click the link to activate your account.
+                </p>
+                <button id="resend-verification" class="text-sm font-semibold text-blue-600 hover:underline mt-4">
+                    Resend verification email
+                </button>
+            </div>
 
             <!-- Login Form -->
             <form id="login-form" class="space-y-4">
-                <h2 class="text-xl font-semibold text-gray-800 text-center">Welcome Back</h2>
+                <h2 class="text-2xl font-bold text-center text-gray-800">Welcome Back</h2>
                 <div>
-                    <label for="login-email" class="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" id="login-email" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                    <label for="login-email" class="font-medium text-gray-700">Email</label>
+                    <input id="login-email" name="email" type="email" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]" placeholder="you@company.com">
                 </div>
                 <div>
-                    <label for="login-password" class="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" id="login-password" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                    <label for="login-password" class="font-medium text-gray-700">Password</label>
+                    <input id="login-password" name="password" type="password" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]" placeholder="••••••••">
                 </div>
-                <button type="submit" class="w-full bg-[#0A2647] text-white py-3 px-5 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">
-                    Sign In
-                </button>
-                <p class="text-sm text-center text-gray-600">
-                    No account? <button type="button" id="show-register" class="font-semibold text-blue-600 hover:underline">Register now</button>
+                <button type="submit" class="w-full bg-[#0A2647] text-white py-3 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">Sign In</button>
+                <p class="text-center text-sm text-gray-600">
+                    No account? <a href="#" id="show-register" class="font-semibold text-blue-600 hover:underline">Register now</a>
                 </p>
             </form>
 
             <!-- Registration Form -->
-            <form id="register-form" class="hidden space-y-4">
-                <h2 class="text-xl font-semibold text-gray-800 text-center">Create Your Account</h2>
+            <form id="register-form" class="hidden space-y-3">
+                <h2 class="text-2xl font-bold text-center text-gray-800">Create Account</h2>
                 <div>
-                    <label for="register-name" class="block text-sm font-medium text-gray-700">Full Name</label>
-                    <input type="text" id="register-name" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                    <label for="reg-name" class="font-medium text-gray-700">Full Name</label>
+                    <input id="reg-name" name="name" type="text" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
                 </div>
                 <div>
-                    <label for="register-company" class="block text-sm font-medium text-gray-700">Company Name</label>
-                    <input type="text" id="register-company" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                    <label for="reg-email" class="font-medium text-gray-700">Email</label>
+                    <input id="reg-email" name="email" type="email" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                </div>
+                 <div>
+                    <label for="reg-phone" class="font-medium text-gray-700">Phone Number</label>
+                    <input id="reg-phone" name="phone" type="tel" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                </div>
+                 <div>
+                    <label for="reg-company" class="font-medium text-gray-700">Company Name</label>
+                    <input id="reg-company" name="company" type="text" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
                 </div>
                 <div>
-                    <label for="register-phone" class="block text-sm font-medium text-gray-700">Phone Number</label>
-                    <input type="tel" id="register-phone" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
+                    <label for="reg-password" class="font-medium text-gray-700">Password</label>
+                    <input id="reg-password" name="password" type="password" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
                 </div>
-                <div>
-                    <label for="register-email" class="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" id="register-email" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
-                </div>
-                <div>
-                    <label for="register-password" class="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" id="register-password" required class="mt-1 w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
-                </div>
-                <button type="submit" class="w-full bg-[#0A2647] text-white py-3 px-5 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">
-                    Register
-                </button>
-                <p class="text-sm text-center text-gray-600">
-                    Already have an account? <button type="button" id="show-login" class="font-semibold text-blue-600 hover:underline">Sign in</button>
+                <button type="submit" class="w-full bg-[#0A2647] text-white py-3 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">Create Account</button>
+                <p class="text-center text-sm text-gray-600">
+                    Already have an account? <a href="#" id="show-login" class="font-semibold text-blue-600 hover:underline">Sign in</a>
                 </p>
             </form>
-
-            <!-- Verification Message -->
-            <div id="verification-message" class="hidden text-center">
-                 <h2 class="text-xl font-semibold text-gray-800">Check Your Email</h2>
-                 <p class="text-gray-600 mt-2">We've sent a verification link to <strong id="verification-email">your-email@example.com</strong>.</p>
-                 <p class="text-gray-600 mt-4">Please click the link in that email to continue.</p>
-                 <button id="resend-verification" class="mt-4 text-sm font-semibold text-blue-600 hover:underline">Resend email</button>
-                 <button id="verification-logout" class="mt-4 w-full bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 font-semibold">Sign out</button>
-            </div>
         </div>
     </div>
 
-    <!-- 
-      ================================================================
-      APP CONTAINER (MODIFIED)
-      This container is hidden by default and shown to logged-in users.
-      ================================================================
-    -->
+
+    <!-- Main App Container (Initially Hidden) -->
     <div id="app-container" class="hidden flex-grow flex flex-col">
         <!-- Header -->
         <header class="bg-[#0A2647] shadow-lg sticky top-0 z-50">
@@ -136,15 +310,14 @@
                 </a>
                 <div class="flex items-center gap-4">
                     <div class="relative">
-                        <select id="currency-selector" class="bg-[#1B3A5F] border-gray-600 text-white text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2">
+                         <select id="currency-selector" class="bg-[#1B3A5F] border-gray-600 text-white text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2">
                             <option value="SAR" selected>SAR</option>
                             <option value="USD">USD</option>
                         </select>
                     </div>
-                    <button id="show-contact-modal" class="bg-[#FFB830] text-[#0A2647] py-2 px-5 rounded-lg hover:bg-yellow-500 transition duration-300 font-semibold">
+                    <button id="show-contact-modal" class="bg-[#FFB830] text-[#0A2647] py-2 px-5 rounded-lg hover:bg-yellow-500 transition duration-300 font-semibold hidden sm:block">
                         Get Full Analysis
                     </button>
-                    <!-- NEW LOGOUT BUTTON -->
                     <button id="logout-button" class="bg-red-600 text-white py-2 px-5 rounded-lg hover:bg-red-700 transition duration-300 font-semibold">
                         Logout
                     </button>
@@ -164,18 +337,19 @@
 
                     <!-- Left Panel: Inputs -->
                     <div class="lg:col-span-4 bg-gray-50 p-6 rounded-xl border">
-                        <div class="flex justify-between items-center mb-4">
+                         <div class="flex justify-between items-center mb-4">
                             <div class="border-b border-gray-200">
                                 <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                                    <button id="tab-data" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Revenue Data</button>
-                                    <button id="tab-assumptions" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700">Assumptions</button>
+                                     <button id="tab-data" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">Revenue Data</button>
+                                     <button id="tab-assumptions" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700">Assumptions</button>
                                 </nav>
                             </div>
-                            <!-- Loading Spinner -->
+                             <!-- Loading Spinner -->
                             <div id="loading-spinner" class="hidden">
                                 <svg class="animate-spin h-5 w-5 text-[#0A2647]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8
+ 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
                             </div>
                         </div>
@@ -200,26 +374,26 @@
                             <hr>
                             <div id="expense-categories" class="space-y-2">
                                 <h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>
-                                <!-- JS populates expense inputs -->
+                                 <!-- JS populates expense inputs -->
                             </div>
                             <button id="add-expense" class="text-sm text-blue-600 font-semibold hover:text-blue-800">+ Add Expense Category</button>
                             <hr>
-                            <h3 class="font-bold text-lg text-gray-800">Tax Assumptions (KSA)</h3>
-                            <div class="flex items-center justify-between">
+                             <h3 class="font-bold text-lg text-gray-800">Tax Assumptions (KSA)</h3>
+                             <div class="flex items-center justify-between">
                                 <label for="apply-vat" class="font-semibold text-gray-700">Apply 15% VAT to Revenue</label>
                                 <input type="checkbox" id="apply-vat" checked class="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300">
                             </div>
-                            <div>
+                             <div>
                                 <label for="zakat-base" class="font-semibold text-gray-700 block mb-1">Annual Zakat Base (SAR)</label>
                                 <input type="number" id="zakat-base" value="500000" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
                             </div>
                             <hr>
                             <h3 class="font-bold text-lg text-gray-800">Scenario Analysis</h3>
-                            <div>
+                             <div>
                                 <label for="optimistic-modifier" class="font-semibold text-gray-700 block mb-1">Optimistic Revenue Modifier (%)</label>
                                 <input type="number" id="optimistic-modifier" value="15" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-green-400">
                             </div>
-                            <div>
+                             <div>
                                 <label for="pessimistic-modifier" class="font-semibold text-gray-700 block mb-1">Pessimistic Revenue Modifier (%)</label>
                                 <input type="number" id="pessimistic-modifier" value="-20" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-red-400">
                             </div>
@@ -242,7 +416,7 @@
                                 <h3 class="text-sm font-semibold text-gray-500">Projected VAT Liability</h3>
                                 <p id="kpi-vat" class="text-xl font-bold text-red-600">SAR 0</p>
                             </div>
-                            <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
+                             <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
                                 <h3 class="text-sm font-semibold text-gray-500">Annual Zakat Due</h3>
                                 <p id="kpi-zakat" class="text-xl font-bold text-red-600">SAR 0</p>
                             </div>
@@ -251,7 +425,7 @@
                         <!-- Charts -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div class="md:col-span-2 bg-white p-4 rounded-lg shadow-sm h-96">
-                                <canvas id="forecastChart"></canvas>
+                                 <canvas id="forecastChart"></canvas>
                             </div>
                             <div class="bg-white p-4 rounded-lg shadow-sm h-96">
                                 <h3 class="text-lg font-bold text-center mb-2">Expense Breakdown</h3>
@@ -291,7 +465,7 @@
                 </div>
             </div>
         </main>
-
+    
         <!-- Contact Modal -->
         <div id="contact-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
             <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md m-4">
@@ -315,9 +489,9 @@
         <footer class="bg-[#0A2647] text-gray-300 mt-8">
             <div class="container mx-auto py-8 px-6">
                 <div class="flex flex-col items-center text-center">
-                    <a href="#" class="text-2xl font-bold text-white mb-4">
+                     <a href="#" class="text-2xl font-bold text-white mb-4">
                         Fin-Cast<span class="text-[#FFB830]">.</span>
-                    </a>
+                     </a>
                     <nav class="flex justify-center gap-6 mb-4">
                         <a href="#" class="text-sm hover:text-[#FFB830] transition-colors">About Us</a>
                         <a href="#" class="text-sm hover:text-[#FFB830] transition-colors">Privacy Policy</a>
@@ -334,272 +508,15 @@
     </div> <!-- End App Container -->
 
 
-    <!-- 
-      ================================================================
-      FIREBASE & APP LOGIC (NEW SCRIPT MODULE)
-      ================================================================
-    -->
     <script type="module">
-        // --- Import Firebase Services ---
-        // We use the "compat" libraries for broader compatibility, but you can use modular (v9+)
-        // For this self-contained file, we'll import from the CDN
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            onAuthStateChanged,
-            createUserWithEmailAndPassword,
-            signInWithEmailAndPassword,
-            sendEmailVerification,
-            signOut,
-            signInWithCustomToken,
-            signInAnonymously
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            setDoc,
-            setLogLevel
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // This outer script handles auth and must be module type for firebase imports
+        // The main app logic will be in a separate, non-module script
+    </script>
 
-        
-        // --- Use Provided Firebase Config & App ID ---
-        // These variables MUST be provided by the environment (e.g., Canvas)
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : {
-                apiKey: "AIzaSyA_4vxHARnQxPYOI3EUkbbukDjJZDJSar4",
-                authDomain: "fincast-983c8.firebaseapp.com",
-                projectId: "fincast-983c8",
-                storageBucket: "fincast-983c8.firebasestorage.app",
-                messagingSenderId: "185506506213",
-                appId: "1:185506506213:web:b15887d0da75ce357d3b0c",
-                measurementId: "G-PWHJ50CK9B"
-              }; // Fallback
-        
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        // --- Initialize Firebase ---
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        setLogLevel('Debug'); // Enable Firestore logging
-
-        let currentUserId = null; // Store the user ID
-        let appInitialized = false; // Flag to prevent multiple initializations
-
-        // --- DOM Element Selection (Auth) ---
-        const authContainer = document.getElementById('auth-container');
-        const appContainer = document.getElementById('app-container');
-        const loginForm = document.getElementById('login-form');
-        const registerForm = document.getElementById('register-form');
-        const showLoginBtn = document.getElementById('show-login');
-        const showRegisterBtn = document.getElementById('show-register');
-        const authError = document.getElementById('auth-error');
-        const authSuccess = document.getElementById('auth-success');
-        const verificationMessage = document.getElementById('verification-message');
-        const verificationEmail = document.getElementById('verification-email');
-        const resendVerificationBtn = document.getElementById('resend-verification');
-        const verificationLogoutBtn = document.getElementById('verification-logout');
-        const logoutButton = document.getElementById('logout-button');
-
-        // --- Auth UI Toggling ---
-        showLoginBtn.addEventListener('click', () => {
-            loginForm.classList.remove('hidden');
-            registerForm.classList.add('hidden');
-            hideMessages();
-        });
-        showRegisterBtn.addEventListener('click', () => {
-            loginForm.classList.add('hidden');
-            registerForm.classList.remove('hidden');
-            hideMessages();
-        });
-
-        function showAuthError(message) {
-            authError.textContent = message;
-            authError.classList.remove('hidden');
-            authSuccess.classList.add('hidden');
-            verificationMessage.classList.add('hidden');
-        }
-
-        function showAuthSuccess(message) {
-            authSuccess.textContent = message;
-            authSuccess.classList.remove('hidden');
-            authError.classList.add('hidden');
-            verificationMessage.classList.add('hidden');
-        }
-
-        function showVerificationMessage(email) {
-            verificationEmail.textContent = email;
-            verificationMessage.classList.remove('hidden');
-            loginForm.classList.add('hidden');
-            registerForm.classList.add('hidden');
-            authError.classList.add('hidden');
-            authSuccess.classList.add('hidden');
-        }
-
-        function hideMessages() {
-            authError.classList.add('hidden');
-            authSuccess.classList.add('hidden');
-        }
-
-        function showApp() {
-            authContainer.classList.add('hidden');
-            appContainer.classList.remove('hidden');
-            if (!appInitialized) {
-                initializeAppUI();
-                appInitialized = true;
-            }
-        }
-
-        function showAuth() {
-            authContainer.classList.remove('hidden');
-            appContainer.classList.add('hidden');
-            loginForm.classList.remove('hidden');
-            registerForm.classList.add('hidden');
-            verificationMessage.classList.add('hidden');
-            hideMessages();
-        }
-
-        // --- Core Auth Logic ---
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUserId = user.uid;
-                if (user.emailVerified) {
-                    console.log('User logged in and verified:', user.email);
-                    showApp();
-                } else {
-                    console.log('User logged in but email not verified:', user.email);
-                    showVerificationMessage(user.email);
-                    showAuth(); // Show the auth container, but the message inside it
-                }
-            } else {
-                console.log('User is logged out.');
-                currentUserId = null;
-                showAuth();
-            }
-        });
-
-        // --- Initial Auth Check (using provided token) ---
-        (async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    console.log('Signing in with custom token...');
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    // If no token, the onAuthStateChanged will handle the "logged out" state.
-                    // We can also try anonymous sign-in if that's a desired fallback.
-                    // For this app, we'll just let the listener show the login page.
-                    console.log('No initial token. Waiting for user login.');
-                    // If you want to default to anonymous auth (no login required), uncomment next line
-                    // await signInAnonymously(auth); 
-                }
-            } catch (error) {
-                console.error('Error during initial auth:', error);
-                // If token fails, fall back to manual login
-                showAuth();
-            }
-        })();
-
-
-        // --- Auth Event Listeners ---
-
-        // Login
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            hideMessages();
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
-            try {
-                await signInWithEmailAndPassword(auth, email, password);
-                // onAuthStateChanged will handle the UI update
-            } catch (error) {
-                console.error("Login Error:", error);
-                showAuthError(error.message);
-            }
-        });
-
-        // Register
-        registerForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            hideMessages();
-            
-            const name = document.getElementById('register-name').value;
-            const companyName = document.getElementById('register-company').value;
-            const phoneNumber = document.getElementById('register-phone').value;
-            const email = document.getElementById('register-email').value;
-            const password = document.getElementById('register-password').value;
-
-            try {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
-                
-                // Save additional user info to Firestore
-                // FIX: Path must point to a document (even segments).
-                // We create a doc named 'details' inside the 'profile' collection.
-                const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'details');
-                
-                // DEBUG: Log the exact path being used
-                console.log('Attempting to write user profile to path:', userProfileRef.path);
-
-                await setDoc(userProfileRef, {
-                    name: name,
-                    companyName: companyName,
-                    phoneNumber: phoneNumber,
-                    email: email,
-                    createdAt: new Date().toISOString()
-                });
-
-                // Send verification email
-                await sendEmailVerification(user);
-                showVerificationMessage(user.email);
-                showAuthSuccess("Registration successful! Please check your email to verify your account.");
-                
-            } catch (error) {
-                console.error("Registration Error:", error);
-                showAuthError(error.message);
-            }
-        });
-
-        // Logout
-        logoutButton.addEventListener('click', async () => {
-            try {
-                await signOut(auth);
-                // onAuthStateChanged will handle showing the login page
-            } catch (error) {
-                console.error("Logout Error:", error);
-            }
-        });
-        
-        verificationLogoutBtn.addEventListener('click', async () => {
-             try {
-                await signOut(auth);
-                // onAuthStateChanged will handle showing the login page
-            } catch (error) {
-                console.error("Logout Error:", error);
-            }
-        });
-
-
-        // Resend Verification
-        resendVerificationBtn.addEventListener('click', async () => {
-            const user = auth.currentUser;
-            if (user) {
-                try {
-                    await sendEmailVerification(user);
-                    showAuthSuccess("Verification email resent. Please check your inbox.");
-                } catch (error) {
-                    console.error("Resend Verification Error:", error);
-                    showAuthError(error.message);
-                }
-            }
-        });
-
-        // ================================================================
-        // --- START OF ORIGINAL FIN-CAST APP LOGIC ---
-        // This code now runs *only* after auth is successful.
-        // ================================================================
-
-        function initializeAppUI() {
+    <script>
+        // --- MAIN APP LOGIC ---
+        // This function is called by the auth listener once the user is verified
+        function initializeAppLogic() {
             const { jsPDF } = window.jspdf;
             const SAR_TO_USD_RATE = 0.27;
 
@@ -607,7 +524,7 @@
             const today = new Date();
             const historicalPeriodStartDate = new Date(today.getFullYear(), today.getMonth() - 12, 1);
 
-            // --- DOM ELEMENT SELECTION (APP) ---
+            // --- DOM ELEMENT SELECTION ---
             const form = document.getElementById('forecast-form');
             const tableBody = document.getElementById('report-table-body');
             const expenseCategoriesContainer = document.getElementById('expense-categories');
@@ -667,6 +584,9 @@
                     const sampleRevenue = baseRevenue * seasonalPattern[seasonalIndex] * (1 + (Math.random() - 0.5) * 0.1);
                     form.appendChild(createRevenueInput(monthName, Math.round(sampleRevenue)));
                 }
+                
+                // Clear existing default expenses before adding new ones
+                expenseCategoriesContainer.innerHTML = '<h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>';
                 addExpenseCategory('Salaries & Wages', 8000);
                 addExpenseCategory('Rent & Utilities', 4000);
                 addExpenseCategory('Marketing & Sales', 2500);
@@ -675,7 +595,7 @@
             function createRevenueInput(monthName, value) {
                 const div = document.createElement('div');
                 div.innerHTML = `<label class="font-semibold text-sm text-gray-600 block">${monthName}</label>
-                                <input type="number" value="${value}" class="historical-revenue w-full p-2 rounded-md border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">`;
+                                 <input type="number" value="${value}" class="historical-revenue w-full p-2 rounded-md border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">`;
                 return div;
             }
 
@@ -708,7 +628,7 @@
                     }))
                 };
             }
-            function getFormatter() {
+             function getFormatter() {
                 return new Intl.NumberFormat('en-US', {
                     style: 'currency',
                     currency: currentCurrency,
@@ -716,39 +636,176 @@
                 });
             }
             
+            // --- FORECAST LOGIC (Moved back from server) ---
+            
+            /**
+             * Performs linear regression on a set of (x, y) data points.
+             * @param {number[]} y - The array of y-values (e.g., revenue).
+             * @param {number[]} [x] - Optional array of x-values (e.g., time periods). If not provided, 0, 1, 2... is used.
+             * @returns {{slope: number, intercept: number, predict: function(number): number}}
+             */
+            function linearRegression(y, x) {
+                const n = y.length;
+                if (!x) {
+                    x = Array.from({ length: n }, (_, i) => i);
+                }
+                
+                let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+                for (let i = 0; i < n; i++) {
+                    sumX += x[i];
+                    sumY += y[i];
+                    sumXY += x[i] * y[i];
+                    sumXX += x[i] * x[i];
+                }
+
+                const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+                const intercept = (sumY - slope * sumX) / n;
+                
+                return {
+                    slope,
+                    intercept,
+                    predict: (newX) => intercept + slope * newX
+                };
+            }
+
+            /**
+             * Generates a 12-month forecast based on historical data using seasonal decomposition and trend analysis.
+             * @param {number[]} historical - 12 months of historical revenue data.
+             * @returns {number[]} - A 12-month baseline forecast.
+             */
+            function generateBaselineForecast(historical) {
+                if (historical.length < 12 || historical.every(v => v === 0)) {
+                    // Fallback for insufficient or zero data
+                    return Array(12).fill(0);
+                }
+                
+                // 1. Calculate 12-month moving average (to find trend)
+                // Since we only have 12 months, we can't use a centered moving average.
+                // We'll estimate the trend using linear regression on the whole dataset.
+                
+                // 2. De-trend the data to find seasonal component
+                const trend = linearRegression(historical);
+                const deTrended = historical.map((val, i) => val - trend.predict(i));
+
+                // 3. Calculate seasonal factors
+                // For 12 months, the seasonal factor is just the average deviation for that month.
+                // With only 1 year, we assume the seasonal component is this de-trended value.
+                // A better model would average this over multiple years.
+                const seasonalFactors = deTrended; 
+
+                // 4. Project the trend forward
+                const trendForecast = [];
+                for (let i = 0; i < 12; i++) {
+                    trendForecast.push(trend.predict(i + 12)); // Predict the next 12 periods
+                }
+
+                // 5. Re-apply seasonality to the forecasted trend
+                const baselineForecast = trendForecast.map((trendVal, i) => {
+                    const seasonalComponent = seasonalFactors[i]; // Use the corresponding month's seasonal factor
+                    return Math.max(0, trendVal + seasonalComponent); // Add trend and seasonality
+                });
+
+                return baselineForecast;
+            }
+
+            /**
+             * MOCK API: Simulates the backend server logic using the advanced forecast.
+             * This function now runs entirely in the browser.
+             */
+            function runMockApi(payload) {
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        const {
+                            historicalRevenues,
+                            cogsPercent,
+                            applyVat,
+                            zakatBase,
+                            optimisticModifier,
+                            pessimisticModifier,
+                            expenseItems
+                        } = payload;
+
+                        if (!historicalRevenues || historicalRevenues.length !== 12) {
+                             return resolve({ error: '12 months of historical revenue data are required.' });
+                        }
+                        
+                        // 1. Generate the baseline forecast
+                        const baselineForecast = generateBaselineForecast(historicalRevenues);
+                        
+                        // 2. Create optimistic and pessimistic scenarios
+                        const forecastedRevenues = {
+                            baseline: baselineForecast,
+                            optimistic: baselineForecast.map(val => val * (1 + (optimisticModifier / 100))),
+                            pessimistic: baselineForecast.map(val => val * (1 + (pessimisticModifier / 100)))
+                        };
+
+                        // 3. Generate Full P&L Report
+                        const monthlyOpEx = expenseItems.reduce((sum, item) => sum + item.value, 0);
+                        const annualZakat = zakatBase * 0.025;
+                        const fullReport = [];
+                        let totalForecastedRevenue = 0, totalForecastedNetProfit = 0, totalVat = 0;
+                        const allRevenues = [...historicalRevenues, ...baselineForecast];
+
+                        for (let i = 0; i < 24; i++) {
+                            const isHistorical = i < 12;
+                            const revenue = allRevenues[i];
+                            const cogs = revenue * (cogsPercent / 100);
+                            const grossProfit = revenue - cogs;
+                            const vatOnRevenue = applyVat ? revenue * 0.15 : 0;
+                            // Note: In KSA, VAT on OpEx could be reclaimed, but this is a simplified P&L.
+                            
+                            // Zakat is applied annually on the zakat base, not monthly profit.
+                            // We show it as a single expense at the end of the year for P&L impact.
+                            const zakatForMonth = (!isHistorical && i === 23) ? annualZakat : 0; 
+
+                            const netProfit = grossProfit - monthlyOpEx - zakatForMonth; // VAT is a balance sheet item, not P&L expense
+
+                            if (!isHistorical) {
+                                totalForecastedRevenue += revenue;
+                                totalVat += vatOnRevenue; // This is the liability calculation
+                                totalForecastedNetProfit += netProfit; // This is profit before interest/corp tax (if any)
+                            }
+                            fullReport.push({ monthIndex: i, isHistorical, revenue, grossProfit, netProfit });
+                        }
+                        
+                        const netProfitMargin = totalForecastedRevenue > 0 ? (totalForecastedNetProfit / totalForecastedRevenue) * 100 : 0;
+
+                        resolve({
+                            kpis: {
+                                annualRevenue: totalForecastedRevenue,
+                                netMargin: netProfitMargin,
+                                vat: totalVat,
+                                zakat: annualZakat,
+                            },
+                            forecastedRevenues,
+                            fullReport
+                        });
+
+                    }, 500); // Simulate network delay
+                });
+            }
+
+
             async function runForecast() {
                 loadingSpinner.classList.remove('hidden');
                 tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-gray-500">Generating forecast...</td></tr>`;
                 const payload = getInputs();
 
                 try {
-                    // Call the backend API
-                    const apiUrl = 'http://localhost:3000/api/forecast';
-                    
-                    // --- TODO: Add Firebase Auth Token to Header ---
-                    // const user = auth.currentUser;
-                    // const token = user ? await user.getIdToken() : '';
-                    
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                            // 'Authorization': `Bearer ${token}` // Uncomment when server supports token verification
-                        },
-                        body: JSON.stringify(payload)
-                    });
+                    // --- SWITCHED TO MOCK API ---
+                    // This now calls the JS function defined above, not localhost
+                    lastApiResponse = await runMockApi(payload);
+                    // ---------------------------
 
-                    if (!response.ok) {
-                        const errData = await response.json();
-                        throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+                    if(lastApiResponse.error) {
+                         tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">${lastApiResponse.error}</td></tr>`;
+                         return;
                     }
-                    
-                    lastApiResponse = await response.json();
-                    
+
                     updateUI();
                 } catch (error) {
                     console.error('Failed to generate forecast:', error);
-                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">An error occurred: ${error.message}</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center p-4 text-red-500">An error occurred during forecasting.</td></tr>`;
                 } finally {
                     loadingSpinner.classList.add('hidden');
                 }
@@ -796,7 +853,7 @@
                                 borderWidth: 1,
                                 fill: '+1',
                             },
-                            {
+                             {
                                 label: 'Optimistic',
                                 data: Array(12).fill(null).concat(forecastedRevenues.optimistic.map(r => r * conversionRate)),
                                 borderColor: 'rgba(34, 197, 94, 0.2)',
@@ -813,7 +870,7 @@
                                 pointBackgroundColor: '#3b82f6',
                                 pointRadius: 3,
                             },
-                            {
+                             {
                                 label: 'Historical',
                                 data: historicalRevenues,
                                 borderColor: '#0A2647',
@@ -870,7 +927,7 @@
                 document.body.removeChild(link);
             }
 
-            function importFromCSV(event) {
+             function importFromCSV(event) {
                 const file = event.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
@@ -899,11 +956,13 @@
                     runForecast();
                 };
                 reader.readAsText(file);
-            }
+             }
+
 
             function downloadPDF() {
                 if (!lastApiResponse.kpis || !forecastChart || !expenseChart) { 
-                    console.error('Please generate a forecast first.'); 
+                    // Don't use alert()
+                    console.warn('PDF Download Error: Forecast not generated yet.'); 
                     return; 
                 }
                 try {
@@ -947,29 +1006,27 @@
                 } catch (error) { console.error("Failed to generate PDF:", error); }
             }
             
-            // --- EVENT LISTENERS (APP) ---
-            document.getElementById('app').addEventListener('input', runForecast);
-            addExpenseBtn.addEventListener('click', () => {
+            // --- EVENT LISTENERS ---
+            // Use querySelector for app-container to scope listeners
+            const appElement = document.getElementById('app-container');
+            
+            appElement.querySelector('#app').addEventListener('input', runForecast);
+            appElement.querySelector('#add-expense').addEventListener('click', () => {
                 addExpenseCategory();
                 runForecast(); // Re-run forecast when a new expense is added
             });
-            downloadPdfBtn.addEventListener('click', downloadPDF);
-            exportCsvBtn.addEventListener('click', exportToCSV);
-            importCsvInput.addEventListener('change', importFromCSV);
-            currencySelector.addEventListener('change', (e) => {
+            appElement.querySelector('#download-pdf').addEventListener('click', downloadPDF);
+            appElement.querySelector('#export-csv').addEventListener('click', exportToCSV);
+            appElement.querySelector('#import-csv-input').addEventListener('change', importFromCSV);
+            appElement.querySelector('#currency-selector').addEventListener('change', (e) => {
                 currentCurrency = e.target.value;
                 updateUI();
             });
             
-            // --- INITIALIZATION (APP) ---
+            // --- INITIALIZATION ---
             initializeInputs();
             runForecast();
-        }
-
-        // ================================================================
-        // --- END OF ORIGINAL FIN-CAST APP LOGIC ---
-        // ================================================================
-
+        } // --- End of initializeAppLogic ---
     </script>
 </body>
 </html>
