@@ -534,7 +534,9 @@
                 const user = userCredential.user;
                 
                 // Save additional user info to Firestore
-                const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile');
+                // FIX: Path must point to a document (even segments).
+                // We create a doc named 'main' inside the 'profile' collection.
+                const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'main');
                 await setDoc(userProfileRef, {
                     name: name,
                     companyName: companyName,
