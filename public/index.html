@@ -7,13 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <!-- PDF Generation Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- PDF Generation Libraries --><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Firebase SDKs -->
-    <script type="module">
+    <!-- Firebase SDKs --><script type="module">
         // Import the functions you need from the SDKs you need
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { 
@@ -28,6 +26,7 @@
             getFirestore, 
             doc, 
             setDoc,
+            getDoc, // Added getDoc to read profile data
             setLogLevel
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -61,7 +60,22 @@
         const authMessage = document.getElementById('auth-message');
         const verificationMessage = document.getElementById('verification-message');
         const resendVerificationBtn = document.getElementById('resend-verification');
+        
+        // --- New Modal/Profile DOM Elements ---
         const logoutBtn = document.getElementById('logout-button');
+        const logoutModal = document.getElementById('logout-modal');
+        const cancelLogoutBtn = document.getElementById('cancel-logout');
+        const confirmLogoutBtn = document.getElementById('confirm-logout');
+        
+        const profileModal = document.getElementById('profile-modal');
+        const showProfileBtn = document.getElementById('show-profile-modal');
+        const closeProfileBtn = document.getElementById('close-profile-modal');
+        
+        const profileName = document.getElementById('profile-name');
+        const profileEmail = document.getElementById('profile-email');
+        const profilePhone = document.getElementById('profile-phone');
+        const profileCompany = document.getElementById('profile-company');
+
         
         // --- Auth UI Toggling ---
         showRegisterBtn.addEventListener('click', (e) => {
@@ -84,6 +98,64 @@
             else authMessage.classList.remove('text-red-500');
         }
 
+        // --- Auth State Change Listener ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                if (user.emailVerified) {
+                    // User is signed in and verified
+                    authContainer.classList.add('hidden');
+                    appContainer.classList.remove('hidden');
+                    appContainer.classList.add('flex'); // Make it flex
+                    // Initialize the main application logic
+                    if (typeof initializeAppLogic === 'function') {
+                        initializeAppLogic();
+                    } else {
+                        console.error("Main app logic (initializeAppLogic) not found!");
+                    }
+                } else {
+                    // User is signed in but not verified
+                    authContainer.classList.remove('hidden');
+                    appContainer.classList.add('hidden');
+                    appContainer.classList.remove('flex');
+                    loginForm.classList.add('hidden');
+                    registerForm.classList.add('hidden');
+                    verificationMessage.classList.remove('hidden');
+                }
+            } else {
+                // User is signed out
+                authContainer.classList.remove('hidden');
+                appContainer.classList.add('hidden');
+                appContainer.classList.remove('flex');
+                loginForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+                verificationMessage.classList.add('hidden');
+            }
+        });
+
+        // --- Resend Verification ---
+        resendVerificationBtn.addEventListener('click', async () => {
+            try {
+                await sendEmailVerification(auth.currentUser);
+                setAuthMessage('A new verification email has been sent.', false);
+            } catch (error) {
+                setAuthMessage(error.message);
+            }
+        });
+
+        // --- Login Logic ---
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = loginForm.email.value;
+            const password = loginForm.password.value;
+            setAuthMessage('Signing in...', false);
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // Auth state listener (onAuthStateChanged) will handle the UI switch
+            } catch (error) {
+                setAuthMessage(error.message);
+            }
+        });
+
         // --- Registration Logic ---
         registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -99,12 +171,7 @@
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 const user = userCredential.user;
                 
-                // Save additional user info to Firestore
-                // FIX: Path must point to a document (even segments).
-                // We create a doc named 'details' inside the 'profile' collection.
                 const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'details');
-                
-                // DEBUG: Log the exact path being used
                 console.log('Attempting to write user profile to path:', userProfileRef.path);
 
                 await setDoc(userProfileRef, {
@@ -115,7 +182,6 @@
                     createdAt: new Date()
                 });
 
-                // Send verification email
                 await sendEmailVerification(user);
                 
                 setAuthMessage('Registration successful! Please check your email to verify your account.', false);
@@ -128,71 +194,111 @@
             }
         });
 
-        // --- Login Logic ---
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = loginForm.email.value;
-            const password = loginForm.password.value;
-            setAuthMessage('Signing in...', false);
-
-            try {
-                await signInWithEmailAndPassword(auth, email, password);
-                // Auth state change will handle showing the app
-            } catch (error) {
-                console.error("Login Error:", error);
-                setAuthMessage(error.message);
-            }
+        // --- Logout Logic (with Confirmation) ---
+        logoutBtn.addEventListener('click', () => {
+            logoutModal.classList.remove('hidden'); // Show confirmation modal
         });
-
-        // --- Logout Logic ---
-        logoutBtn.addEventListener('click', async () => {
+        cancelLogoutBtn.addEventListener('click', () => {
+            logoutModal.classList.add('hidden'); // Hide modal
+        });
+        confirmLogoutBtn.addEventListener('click', async () => {
             try {
                 await signOut(auth);
-                // Auth state change will handle showing the login page
+                logoutModal.classList.add('hidden');
+                // onAuthStateChanged will handle hiding the app
             } catch (error) {
                 console.error("Logout Error:", error);
             }
         });
-
-        // --- Auth State Listener (Controls UI) ---
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // User is signed in
-                if (user.emailVerified) {
-                    // --- User is signed in AND verified ---
-                    authContainer.classList.add('hidden');
-                    appContainer.classList.remove('hidden');
-                    // Initialize the main app now that the user is in
-                    initializeAppLogic(); 
-                } else {
-                    // --- User is signed in but NOT verified ---
-                    authContainer.classList.remove('hidden');
-                    appContainer.classList.add('hidden');
-                    loginForm.classList.add('hidden');
-                    registerForm.classList.add('hidden');
-                    verificationMessage.classList.remove('hidden');
-                }
-            } else {
-                // --- User is signed out ---
-                authContainer.classList.remove('hidden');
-                appContainer.classList.add('hidden');
-                loginForm.classList.remove('hidden');
-                registerForm.classList.add('hidden');
-                verificationMessage.classList.add('hidden');
-                authMessage.textContent = '';
-            }
+        logoutModal.addEventListener('click', (e) => {
+            if (e.target === logoutModal) logoutModal.classList.add('hidden');
         });
 
-        // --- Resend Verification ---
-        resendVerificationBtn.addEventListener('click', async () => {
-            if (auth.currentUser) {
-                try {
-                    await sendEmailVerification(auth.currentUser);
-                    setAuthMessage('New verification email sent!', false);
-                } catch (error) {
-                    setAuthMessage(error.message);
+        // --- Profile Modal Logic ---
+        showProfileBtn.addEventListener('click', async () => {
+            const user = auth.currentUser;
+            if (!user) return; // Should not happen if user is logged in
+
+            // Set loading text
+            profileName.textContent = 'Loading...';
+            profileEmail.textContent = 'Loading...';
+            profilePhone.textContent = 'Loading...';
+            profileCompany.textContent = 'Loading...';
+            
+            profileModal.classList.remove('hidden');
+
+            try {
+                const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'details');
+                const docSnap = await getDoc(userProfileRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    profileName.textContent = data.name || 'Not set';
+                    profileEmail.textContent = data.email || 'Not set';
+                    profilePhone.textContent = data.phone || 'Not set';
+                    profileCompany.textContent = data.company || 'Not set';
+                } else {
+                    // This case might happen if registration was interrupted
+                    profileName.textContent = 'No profile data found.';
+                    profileEmail.textContent = user.email; // Fallback to auth email
+                    profilePhone.textContent = 'N/A';
+                    profileCompany.textContent = 'N/A';
                 }
+            } catch (error) {
+                console.error("Error fetching profile:", error);
+                profileName.textContent = 'Error loading profile.';
+                profileEmail.textContent = '';
+                profilePhone.textContent = '';
+                profileCompany.textContent = '';
             }
+        });
+        closeProfileBtn.addEventListener('click', () => {
+            profileModal.classList.add('hidden');
+        });
+        profileModal.addEventListener('click', (e) => {
+            if (e.target === profileModal) profileModal.classList.add('hidden');
+        });
+
+
+        // --- Custom Cursor Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Create the cursor elements and add them to the body
+            const cursorDot = document.createElement('div');
+            cursorDot.id = 'custom-cursor-dot';
+            document.body.appendChild(cursorDot);
+
+            const cursorFollower = document.createElement('div');
+            cursorFollower.id = 'custom-cursor-follower';
+            document.body.appendChild(cursorFollower);
+
+            // Update cursor position on mouse move
+            document.addEventListener('mousemove', (e) => {
+                const posX = e.clientX + 'px';
+                const posY = e.clientY + 'px';
+                cursorDot.style.left = posX;
+                cursorDot.style.top = posY;
+                cursorFollower.style.left = posX;
+                cursorFollower.style.top = posY;
+            });
+
+            // Add/remove classes based on what's being hovered
+            document.addEventListener('mouseover', (e) => {
+                const target = e.target;
+                if (target.closest('input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="number"], textarea')) {
+                    cursorDot.classList.add('text-hover');
+                    cursorFollower.classList.add('text-hover');
+                } else if (target.closest('a, button, input[type="checkbox"], label[for], select, .tab-button, .remove-expense')) {
+                    cursorDot.classList.add('hovered');
+                    cursorFollower.classList.add('hovered');
+                }
+            });
+
+            document.addEventListener('mouseout', (e) => {
+                cursorDot.classList.remove('hovered');
+                cursorDot.classList.remove('text-hover');
+                cursorFollower.classList.remove('hovered');
+                cursorFollower.classList.remove('text-hover');
+            });
         });
 
     </script>
@@ -200,7 +306,109 @@
     <style>
         body {
             font-family: 'Poppins', sans-serif;
+            cursor: none; /* Hide the default cursor */
         }
+        /* --- Advanced Custom Cursor (Trailing Follower) --- */
+        #custom-cursor-dot {
+            position: fixed;
+            width: 8px; /* Small inner dot */
+            height: 8px;
+            background-color: #FFB830;
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out, opacity 0.2s ease;
+            z-index: 9999;
+        }
+        #custom-cursor-follower {
+            position: fixed;
+            width: 30px; /* Larger outer circle */
+            height: 30px;
+            border: 2px solid rgba(255, 184, 48, 0.7);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(1);
+            /* This transition creates the smooth "lag" effect */
+            transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), 
+                        width 0.3s ease, 
+                        height 0.3s ease, 
+                        border-radius 0.3s ease,
+                        border-color 0.3s ease;
+            z-index: 9998;
+        }
+        /* Link/Button Hover */
+        #custom-cursor-dot.hovered {
+            transform: translate(-50%, -50%) scale(0); /* Hide dot */
+            opacity: 0;
+        }
+        #custom-cursor-follower.hovered {
+            transform: translate(-50%, -50%) scale(1.5); /* Expand follower */
+            border-color: rgba(255, 184, 48, 0.3);
+        }
+        /* Text Input Hover */
+        #custom-cursor-dot.text-hover {
+            transform: translate(-50%, -50%) scale(0); /* Hide dot */
+            opacity: 0;
+        }
+        #custom-cursor-follower.text-hover {
+            width: 4px; /* Slim down to a caret */
+            height: 20px;
+            border-radius: 2px;
+            border-color: #FFB830;
+        }
+
+        /* Show default text caret when inside inputs */
+        input, textarea {
+            cursor: text;
+        }
+        a, button, label, select {
+            cursor: none; /* Ensure no default pointer */
+        }
+
+        /* --- Dynamic Wave Background Animation --- */
+        @keyframes wave-move {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-1600px); } /* Width of the repeating wave */
+        }
+        #login-animation-wrapper {
+            position: absolute;
+            inset: 0;
+            z-index: 1; /* Behind the form */
+            overflow: hidden;
+            background-color: #0A2647;
+        }
+        #wave-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 200px; /* Height of waves */
+            overflow: hidden;
+        }
+        .waves {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 3200px; /* Double the animation width to create a seamless loop */
+            height: 100%;
+        }
+        .wave-1 {
+            animation: wave-move 15s linear infinite;
+            opacity: 0.8;
+            z-index: 12;
+        }
+        .wave-2 {
+            animation: wave-move 20s linear infinite reverse;
+            opacity: 0.5;
+            z-index: 11;
+        }
+        .wave-3 {
+            animation: wave-move 25s linear infinite;
+            opacity: 0.3;
+            z-index: 10;
+        }
+        /* --- End Wave Animation --- */
+
         .kpi-card {
             border-left: 4px solid #FFB830;
             transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
@@ -227,21 +435,34 @@
 </head>
 <body class="text-gray-800 bg-gray-50 flex flex-col min-h-screen">
 
-    <!-- Auth Container -->
-    <div id="auth-container" class="flex items-center justify-center min-h-screen bg-[#0A2647]">
-        <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-xl">
-            
-            <div class="text-center">
+    <!-- Auth Container --><div id="auth-container" class="flex items-center justify-center min-h-screen relative overflow-hidden">
+        <!-- Animated Background --><div id="login-animation-wrapper">
+            <div id="wave-container">
+                <!-- Embedded SVG for the waves --><svg class="waves" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 200">
+                    <defs>
+                        <linearGradient id="wave-gradient" x1="0.5" y1="0" x2="0.5" y2="1">
+                            <stop offset="0%" stop-color="#FFB830" stop-opacity="0.8" />
+                            <stop offset="100%" stop-color="#0A2647" stop-opacity="0.2" />
+                        </linearGradient>
+                    </defs>
+                    <!-- We use <use> to efficiently repeat the wave path --><path id="wave-path" fill="url(#wave-gradient)" d="M0,100 C400,150 400,50 800,100 S1200,150 1600,100 L1600,200 L0,200 Z" />
+                    
+                    <use class="wave-1" href="#wave-path" x="0" y="0"></use>
+                    <use class="wave-2" href="#wave-path" x="0" y="30"></use>
+                    <use class="wave-3" href="#wave-path" x="0" y="60"></use>
+                </svg>
+            </div>
+        </div>
+        
+        <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-xl relative z-20"> <!-- Increased z-index --><div class="text-center">
                 <a href="#" class="text-3xl font-bold text-[#0A2647]">
                     Fin-Cast<span class="text-[#FFB830]">.</span>
                 </a>
             </div>
 
-            <!-- Auth Error Message -->
-            <div id="auth-message" class="text-center font-medium text-red-500"></div>
+            <!-- Auth Error Message --><div id="auth-message" class="text-center font-medium text-red-500"></div>
 
-            <!-- Email Verification Message -->
-            <div id="verification-message" class="hidden text-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <!-- Email Verification Message --><div id="verification-message" class="hidden text-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <h3 class="font-bold text-yellow-800">Verify Your Email</h3>
                 <p class="text-sm text-yellow-700 mt-2">
                     A verification link has been sent to your email. Please click the link to activate your account.
@@ -251,8 +472,7 @@
                 </button>
             </div>
 
-            <!-- Login Form -->
-            <form id="login-form" class="space-y-4">
+            <!-- Login Form --><form id="login-form" class="space-y-4">
                 <h2 class="text-2xl font-bold text-center text-gray-800">Welcome Back</h2>
                 <div>
                     <label for="login-email" class="font-medium text-gray-700">Email</label>
@@ -268,8 +488,7 @@
                 </p>
             </form>
 
-            <!-- Registration Form -->
-            <form id="register-form" class="hidden space-y-3">
+            <!-- Registration Form --><form id="register-form" class="hidden space-y-3">
                 <h2 class="text-2xl font-bold text-center text-gray-800">Create Account</h2>
                 <div>
                     <label for="reg-name" class="font-medium text-gray-700">Full Name</label>
@@ -300,10 +519,8 @@
     </div>
 
 
-    <!-- Main App Container (Initially Hidden) -->
-    <div id="app-container" class="hidden flex-grow flex flex-col">
-        <!-- Header -->
-        <header class="bg-[#0A2647] shadow-lg sticky top-0 z-50">
+    <!-- Main App Container (Initially Hidden) --><div id="app-container" class="hidden flex-grow flex-col">
+        <!-- Header --><header class="bg-[#0A2647] shadow-lg sticky top-0 z-50">
             <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
                 <a href="#" class="text-2xl font-bold text-white">
                     Fin-Cast<span class="text-[#FFB830]">.</span>
@@ -318,6 +535,12 @@
                     <button id="show-contact-modal" class="bg-[#FFB830] text-[#0A2647] py-2 px-5 rounded-lg hover:bg-yellow-500 transition duration-300 font-semibold hidden sm:block">
                         Get Full Analysis
                     </button>
+                    <!-- Profile Icon Button -->
+                    <button id="show-profile-modal" class="text-white hover:text-[#FFB830] transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
                     <button id="logout-button" class="bg-red-600 text-white py-2 px-5 rounded-lg hover:bg-red-700 transition duration-300 font-semibold">
                         Logout
                     </button>
@@ -326,8 +549,7 @@
         </header>
 
         <main class="container mx-auto p-4 md:p-6 flex-grow">
-            <!-- Main Application -->
-            <div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
+            <!-- Main Application --><div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
                 <div class="text-center mb-8">
                     <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Advanced Financial Forecasting & Reporting</h1>
                     <p class="text-gray-600 mt-2 max-w-3xl mx-auto">An intuitive forecasting tool for businesses in Saudi Arabia, the GCC, and beyond. Leverage our advanced analytical engine to gain clearer financial insights.</p>
@@ -335,8 +557,7 @@
 
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-                    <!-- Left Panel: Inputs -->
-                    <div class="lg:col-span-4 bg-gray-50 p-6 rounded-xl border">
+                    <!-- Left Panel: Inputs --><div class="lg:col-span-4 bg-gray-50 p-6 rounded-xl border">
                          <div class="flex justify-between items-center mb-4">
                             <div class="border-b border-gray-200">
                                 <nav class="-mb-px flex space-x-6" aria-label="Tabs">
@@ -344,8 +565,7 @@
                                      <button id="tab-assumptions" class="tab-button whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700">Assumptions</button>
                                 </nav>
                             </div>
-                             <!-- Loading Spinner -->
-                            <div id="loading-spinner" class="hidden">
+                             <!-- Loading Spinner --><div id="loading-spinner" class="hidden">
                                 <svg class="animate-spin h-5 w-5 text-[#0A2647]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8
@@ -362,8 +582,7 @@
                             </div>
                             <p class="text-sm text-gray-600 mb-4">Enter historical revenue for the last 12 completed months.</p>
                             <form id="forecast-form" class="space-y-3 max-h-80 overflow-y-auto pr-2">
-                                <!-- JS will populate historical revenue inputs -->
-                            </form>
+                                <!-- JS will populate historical revenue inputs --></form>
                         </div>
 
                         <div id="assumptions-panel" class="hidden space-y-4">
@@ -374,8 +593,7 @@
                             <hr>
                             <div id="expense-categories" class="space-y-2">
                                 <h3 class="font-bold text-lg text-gray-800">Operating Expenses</h3>
-                                 <!-- JS populates expense inputs -->
-                            </div>
+                                 <!-- JS populates expense inputs --></div>
                             <button id="add-expense" class="text-sm text-blue-600 font-semibold hover:text-blue-800">+ Add Expense Category</button>
                             <hr>
                              <h3 class="font-bold text-lg text-gray-800">Tax Assumptions (KSA)</h3>
@@ -400,10 +618,8 @@
                         </div>
                     </div>
 
-                    <!-- Right Panel: Dashboard -->
-                    <div class="lg:col-span-8 space-y-6">
-                        <!-- KPI Cards -->
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <!-- Right Panel: Dashboard --><div class="lg:col-span-8 space-y-6">
+                        <!-- KPI Cards --><div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div class="bg-white p-4 rounded-lg shadow-sm kpi-card">
                                 <h3 class="text-sm font-semibold text-gray-500">Projected Annual Revenue</h3>
                                 <p id="kpi-annual-revenue" class="text-xl font-bold text-[#0A2647]">SAR 0</p>
@@ -422,8 +638,7 @@
                             </div>
                         </div>
                         
-                        <!-- Charts -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Charts --><div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div class="md:col-span-2 bg-white p-4 rounded-lg shadow-sm h-96">
                                  <canvas id="forecastChart"></canvas>
                             </div>
@@ -433,8 +648,7 @@
                             </div>
                         </div>
 
-                        <!-- Data Table & Download -->
-                        <div class="bg-white p-4 rounded-lg shadow-sm">
+                        <!-- Data Table & Download --><div class="bg-white p-4 rounded-lg shadow-sm">
                             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                                 <div>
                                     <h3 class="text-xl font-bold text-[#0A2647]">Comprehensive Financial Report</h3>
@@ -456,8 +670,7 @@
                                         </tr>
                                     </thead>
                                     <tbody id="report-table-body">
-                                        <!-- JS will populate this -->
-                                    </tbody>
+                                        <!-- JS will populate this --></tbody>
                                 </table>
                             </div>
                         </div>
@@ -466,9 +679,8 @@
             </div>
         </main>
     
-        <!-- Contact Modal -->
-        <div id="contact-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-            <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md m-4">
+        <!-- Contact Modal --><div id="contact-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md m-4 relative z-[61]">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold text-[#0A2647]">Request a Full Analysis</h2>
                     <button id="close-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
@@ -485,8 +697,45 @@
             </div>
         </div>
         
-        <!-- Footer -->
-        <footer class="bg-[#0A2647] text-gray-300 mt-8">
+        <!-- NEW: Logout Confirmation Modal --><div id="logout-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-sm m-4 relative z-[61]">
+                <h2 class="text-2xl font-bold text-[#0A2647] text-center mb-4">Confirm Logout</h2>
+                <p class="text-gray-600 mb-6 text-center">Are you sure you want to log out?</p>
+                <div class="flex gap-4">
+                    <button id="cancel-logout" class="w-full bg-gray-200 text-gray-800 py-2 px-5 rounded-lg hover:bg-gray-300 transition duration-300 font-semibold">Cancel</button>
+                    <button id="confirm-logout" class="w-full bg-red-600 text-white py-2 px-5 rounded-lg hover:bg-red-700 transition duration-300 font-semibold">Yes, Logout</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- NEW: Profile Modal --><div id="profile-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md m-4 relative z-[61]">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-[#0A2647]">Your Profile</h2>
+                    <button id="close-profile-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-sm font-semibold text-gray-500">Full Name</label>
+                        <p id="profile-name" class="text-lg font-medium text-gray-800">Loading...</p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-gray-500">Email Address</label>
+                        <p id="profile-email" class="text-lg font-medium text-gray-800">Loading...</p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-gray-500">Phone Number</label>
+                        <p id="profile-phone" class="text-lg font-medium text-gray-800">Loading...</p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-gray-500">Company Name</label>
+                        <p id="profile-company" class="text-lg font-medium text-gray-800">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer --><footer class="bg-[#0A2647] text-gray-300 mt-8">
             <div class="container mx-auto py-8 px-6">
                 <div class="flex flex-col items-center text-center">
                      <a href="#" class="text-2xl font-bold text-white mb-4">
@@ -505,12 +754,18 @@
                 </div>
             </div>
         </footer>
-    </div> <!-- End App Container -->
-
-
-    <script type="module">
-        // This outer script handles auth and must be module type for firebase imports
-        // The main app logic will be in a separate, non-module script
+    </div> <!-- End App Container --><script>
+        // --- AUTH LOGIC (non-module) ---
+        // This script tag must be AFTER the first <script type="module"> tag
+        // It accesses the 'auth' and 'db' variables initialized in that script
+        // We're splitting this to avoid "module-scoped" errors
+        
+        // NOTE: This is a workaround for variables not being global in modules.
+        // A better long-term solution is a proper build step or refactoring
+        // to pass 'auth' and 'db' explicitly, but this works for a single file.
+        
+        // This script space is intentionally left blank in this version.
+        // The auth logic was moved into the module script to fix reference errors.
     </script>
 
     <script>
@@ -563,7 +818,7 @@
                 dataPanel.classList.add('hidden');
             });
             
-            // --- MODAL HANDLING ---
+            // --- MODAL HANDLING (Contact) ---
             showContactModalBtn.addEventListener('click', () => contactModal.classList.remove('hidden'));
             closeModalBtn.addEventListener('click', () => contactModal.classList.add('hidden'));
             contactModal.addEventListener('click', (e) => {
@@ -1030,3 +1285,4 @@
     </script>
 </body>
 </html>
+
