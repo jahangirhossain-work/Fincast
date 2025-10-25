@@ -61,7 +61,7 @@
         const verificationMessage = document.getElementById('verification-message');
         const resendVerificationBtn = document.getElementById('resend-verification');
         
-        // --- New Modal/Profile DOM Elements ---
+        // --- Modal/Profile/Page Switching DOM Elements ---
         const logoutBtn = document.getElementById('logout-button');
         const logoutModal = document.getElementById('logout-modal');
         const cancelLogoutBtn = document.getElementById('cancel-logout');
@@ -75,7 +75,31 @@
         const profileEmail = document.getElementById('profile-email');
         const profilePhone = document.getElementById('profile-phone');
         const profileCompany = document.getElementById('profile-company');
+        
+        // --- New Market Research Page Elements ---
+        const showMarketResearchBtn = document.getElementById('show-market-research');
+        const marketResearchPage = document.getElementById('market-research-page');
+        const appMainContent = document.getElementById('app-main-content'); // Wrapper for forecast view
+        const backToForecastBtn = document.getElementById('back-to-forecast');
+        const marketResearchForm = document.getElementById('market-research-form');
+        const marketResearchTopic = document.getElementById('market-research-topic');
+        const marketResearchOutput = document.getElementById('market-research-output');
+        const marketResearchSources = document.getElementById('market-research-sources');
+        const marketResearchLoading = document.getElementById('market-research-loading');
+        const marketResearchError = document.getElementById('market-research-error');
+        const downloadResearchPdfBtn = document.getElementById('download-research-pdf'); // New PDF Button
 
+
+        // --- Page Switching Logic ---
+        showMarketResearchBtn.addEventListener('click', () => {
+            appMainContent.classList.add('hidden');
+            marketResearchPage.classList.remove('hidden');
+        });
+        
+        backToForecastBtn.addEventListener('click', () => {
+            marketResearchPage.classList.add('hidden');
+            appMainContent.classList.remove('hidden');
+        });
         
         // --- Auth UI Toggling ---
         showRegisterBtn.addEventListener('click', (e) => {
@@ -106,9 +130,18 @@
                     authContainer.classList.add('hidden');
                     appContainer.classList.remove('hidden');
                     appContainer.classList.add('flex'); // Make it flex
+                    
+                    // Ensure the forecast page is shown by default on login
+                    marketResearchPage.classList.add('hidden');
+                    appMainContent.classList.remove('hidden');
+
                     // Initialize the main application logic
                     if (typeof initializeAppLogic === 'function') {
-                        initializeAppLogic();
+                        // Check if already initialized to prevent multiple chart instances
+                        if (!window.appInitialized) {
+                            initializeAppLogic();
+                            window.appInitialized = true; // Set a flag
+                        }
                     } else {
                         console.error("Main app logic (initializeAppLogic) not found!");
                     }
@@ -120,6 +153,7 @@
                     loginForm.classList.add('hidden');
                     registerForm.classList.add('hidden');
                     verificationMessage.classList.remove('hidden');
+                    window.appInitialized = false; // Reset flag on logout/verification needed
                 }
             } else {
                 // User is signed out
@@ -129,6 +163,7 @@
                 loginForm.classList.remove('hidden');
                 registerForm.classList.add('hidden');
                 verificationMessage.classList.add('hidden');
+                window.appInitialized = false; // Reset flag on logout
             }
         });
 
@@ -258,6 +293,196 @@
         profileModal.addEventListener('click', (e) => {
             if (e.target === profileModal) profileModal.classList.add('hidden');
         });
+
+        // --- Market Research Logic (Gemini API Call) ---
+        marketResearchForm.addEventListener('submit', async (e) => {
+             e.preventDefault();
+             const topic = marketResearchTopic.value.trim();
+             if (!topic) return;
+
+             marketResearchOutput.textContent = '';
+             marketResearchSources.innerHTML = ''; // Clear previous sources
+             marketResearchLoading.classList.remove('hidden');
+             marketResearchError.classList.add('hidden');
+             downloadResearchPdfBtn.classList.add('hidden'); // Hide PDF button initially
+
+             try {
+                const result = await fetchMarketResearch(topic);
+                marketResearchOutput.textContent = result.text;
+                
+                // Display sources if available
+                if (result.sources && result.sources.length > 0) {
+                     marketResearchSources.innerHTML = '<h4 class="text-lg font-semibold mb-2 text-gray-700">Sources:</h4>';
+                     const sourcesList = document.createElement('ul');
+                     sourcesList.className = 'list-disc list-inside space-y-1 text-sm';
+                     result.sources.forEach(source => {
+                        const li = document.createElement('li');
+                        const a = document.createElement('a');
+                        a.href = source.uri;
+                        a.textContent = source.title;
+                        a.target = '_blank'; // Open in new tab
+                        a.rel = 'noopener noreferrer';
+                        a.className = 'text-blue-600 hover:underline';
+                        li.appendChild(a);
+                        sourcesList.appendChild(li);
+                     });
+                     marketResearchSources.appendChild(sourcesList);
+                }
+                
+                // Show PDF button on success
+                downloadResearchPdfBtn.classList.remove('hidden'); 
+
+             } catch (error) {
+                 console.error("Market Research Error:", error);
+                 marketResearchError.textContent = `Error: ${error.message || 'Failed to fetch analysis.'}`;
+                 marketResearchError.classList.remove('hidden');
+             } finally {
+                 marketResearchLoading.classList.add('hidden');
+             }
+        });
+
+        // --- Gemini API Call Function ---
+        async function fetchMarketResearch(userQuery, retryCount = 0) {
+            const systemPrompt = "Act as an expert market research analyst specializing in the Saudi Arabia and GCC region. Provide a concise, insightful analysis based on the user's query using the most current information available. Focus on key trends, opportunities, challenges, and potential market size where applicable. Structure the response clearly using markdown for readability (headings, lists). If citing sources, ensure they are relevant."; // Added markdown instruction
+            const apiKey = ""; // API key is handled by the environment
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                tools: [{ "google_search": {} }], // Enable Google Search grounding
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    // Handle API errors (like 4xx, 5xx)
+                    if (response.status === 429 && retryCount < 3) { // Rate limit error, retry
+                        const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000; // Exponential backoff
+                        // console.log(`Rate limited. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return fetchMarketResearch(userQuery, retryCount + 1);
+                    }
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    let sources = [];
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title); // Ensure sources are valid
+                    }
+                    return { text, sources };
+                } else {
+                     // Handle unexpected response structure or safety blocks
+                    const finishReason = candidate?.finishReason;
+                    const safetyRatings = candidate?.safetyRatings;
+                    console.error("API Response Issue:", { finishReason, safetyRatings, result });
+                    let message = 'No content received from API.';
+                    if (finishReason === 'SAFETY') message = 'Content blocked due to safety settings.';
+                    else if (finishReason) message = `Generation stopped: ${finishReason}`;
+                    throw new Error(message);
+                }
+
+            } catch (error) {
+                // Handle network errors or JSON parsing errors
+                if (retryCount < 3) {
+                    const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+                    // console.log(`Network error. Retrying in ${delay / 1000}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchMarketResearch(userQuery, retryCount + 1);
+                }
+                throw error; // Re-throw after final retry attempt
+            }
+        }
+        
+        // --- NEW: Market Research PDF Download Logic ---
+        function downloadMarketResearchPDF() {
+            const { jsPDF } = window.jspdf;
+            const topic = marketResearchTopic.value.trim();
+            const analysisText = marketResearchOutput.textContent;
+            const sourcesHtml = marketResearchSources.innerHTML; // Get HTML to extract links
+
+            if (!analysisText) return;
+
+            const doc = new jsPDF();
+            
+            // --- PDF Styling and Content ---
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(18);
+            doc.setTextColor('#0A2647');
+            doc.text('Market Research Analysis', 105, 20, { align: 'center' });
+
+            doc.setFontSize(14);
+            doc.setTextColor('#333333');
+            doc.text(`Topic: ${topic}`, 14, 35);
+            
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(11);
+            doc.setTextColor('#555555');
+
+            // Add analysis text, handling line breaks
+            // The splitTextToSize function helps wrap long lines
+            const splitText = doc.splitTextToSize(analysisText, 180); // 180 is approx width in mm
+            doc.text(splitText, 14, 50);
+            
+            // Add Sources
+            let finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 50 + (splitText.length * 5); // Estimate Y position after text
+            if (finalY > 260) { // Add new page if text is too long
+                 doc.addPage();
+                 finalY = 20;
+            } else {
+                finalY += 15; // Add some space before sources
+            }
+            
+            if (sourcesHtml.includes('<li>')) {
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.setTextColor('#0A2647');
+                doc.text('Sources:', 14, finalY);
+                finalY += 7;
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.setTextColor('#0645AD'); // Blue for links
+
+                // Extract source links and titles from HTML
+                const parser = new DOMParser();
+                const sourcesDoc = parser.parseFromString(sourcesHtml, 'text/html');
+                const links = sourcesDoc.querySelectorAll('a');
+                
+                links.forEach(link => {
+                    if (finalY > 280) { // Check if new page needed for source list
+                         doc.addPage();
+                         finalY = 20;
+                    }
+                    doc.textWithLink(`${link.textContent} (${link.href})`, 14, finalY, { url: link.href });
+                    finalY += 6;
+                });
+            }
+
+            // --- Save PDF ---
+            const safeTopic = topic.replace(/[^a-z0-9]/gi, '_').toLowerCase(); // Make filename safe
+            doc.save(`market_research_${safeTopic}.pdf`);
+        }
+        // Attach event listener to the download button
+        downloadResearchPdfBtn.addEventListener('click', downloadMarketResearchPDF);
 
 
         // --- Custom Cursor Logic ---
@@ -431,6 +656,69 @@
         input[type="number"] { 
             -moz-appearance: textfield; 
         }
+         /* Simple loading spinner for Market Research */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #0A2647; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Tailwind prose styles for market research output */
+        .prose {
+          color: theme('colors.gray.700');
+          line-height: 1.6;
+        }
+        .prose h1, .prose h2, .prose h3, .prose h4 {
+          color: theme('colors.gray.900');
+          font-weight: 600;
+          margin-top: 1.2em;
+          margin-bottom: 0.6em;
+        }
+         .prose h3 { font-size: 1.25em; }
+         .prose h4 { font-size: 1.1em; }
+        .prose p { margin-bottom: 1em; }
+        .prose strong {
+          color: theme('colors.gray.900');
+          font-weight: 600;
+        }
+        .prose ul {
+            margin-left: 1.5em; /* Indent lists */
+            margin-bottom: 1em;
+        }
+        .prose ol > li::marker {
+          color: theme('colors.gray.500');
+          font-weight: 400;
+        }
+        .prose ul > li::marker {
+          background-color: theme('colors.gray.400'); /* Slightly darker marker */
+          color: theme('colors.gray.400'); /* Match marker color */
+        }
+        .prose hr {
+          border-color: theme('colors.gray.200');
+          margin-top: 2em;
+          margin-bottom: 2em;
+        }
+        .prose blockquote {
+          color: theme('colors.gray.900');
+          border-left-color: theme('colors.gray.300'); /* Slightly darker border */
+          padding-left: 1em;
+          margin-left: 0;
+          font-style: italic;
+        }
+        .prose thead {
+          color: theme('colors.gray.900');
+          border-bottom-color: theme('colors.gray.300');
+        }
+        .prose tbody tr {
+          border-bottom-color: theme('colors.gray.200');
+        }
     </style>
 </head>
 <body class="text-gray-800 bg-gray-50 flex flex-col min-h-screen">
@@ -532,10 +820,13 @@
                             <option value="USD">USD</option>
                         </select>
                     </div>
+                    <!-- NEW: Market Research Button -->
+                    <button id="show-market-research" class="bg-purple-600 text-white py-2 px-5 rounded-lg hover:bg-purple-700 transition duration-300 font-semibold hidden sm:block">
+                        Market Research
+                    </button>
                     <button id="show-contact-modal" class="bg-[#FFB830] text-[#0A2647] py-2 px-5 rounded-lg hover:bg-yellow-500 transition duration-300 font-semibold hidden sm:block">
                         Get Full Analysis
                     </button>
-                    <!-- MOVED: Profile icon is now after logout -->
                     <button id="logout-button" class="bg-red-600 text-white py-2 px-5 rounded-lg hover:bg-red-700 transition duration-300 font-semibold">
                         Logout
                     </button>
@@ -549,7 +840,8 @@
             </nav>
         </header>
 
-        <main class="container mx-auto p-4 md:p-6 flex-grow">
+        <!-- Wrapper for the main forecast content -->
+        <main id="app-main-content" class="container mx-auto p-4 md:p-6 flex-grow">
             <!-- Main Application --><div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
                 <div class="text-center mb-8">
                     <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Advanced Financial Forecasting & Reporting</h1>
@@ -587,6 +879,7 @@
                         </div>
 
                         <div id="assumptions-panel" class="hidden space-y-4">
+                            <!-- Industry Benchmarking Removed -->
                             <div>
                                 <label for="cogs-percent" class="font-semibold text-gray-700 block mb-1">Cost of Goods Sold (COGS) %</label>
                                 <input type="number" id="cogs-percent" value="40" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
@@ -607,7 +900,6 @@
                                 <input type="number" id="zakat-base" value="500000" class="w-full p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]">
                             </div>
                             <hr>
-                            <!-- NEW: Cash Flow Assumptions -->
                             <h3 class="font-bold text-lg text-gray-800">Cash Flow Assumptions</h3>
                             <div>
                                 <label for="opening-cash-balance" class="font-semibold text-gray-700 block mb-1">Opening Bank Balance (SAR)</label>
@@ -640,7 +932,6 @@
                                 <h3 class="text-sm font-semibold text-gray-500">Projected Annual Revenue</h3>
                                 <p id="kpi-annual-revenue" class="text-xl font-bold text-[#0A2647]">SAR 0</p>
                             </div>
-                            <!-- NEW: Cash Balance KPI -->
                             <div class="bg-white p-4 rounded-lg shadow-sm kpi-card" style="border-left-color: #10B981;">
                                 <h3 class="text-sm font-semibold text-gray-500">Projected Cash Balance</h3>
                                 <p id="kpi-cash-balance" class="text-xl font-bold text-green-600">SAR 0</p>
@@ -653,8 +944,9 @@
                                 <h3 class="text-sm font-semibold text-gray-500">Annual Zakat Due</h3>
                                 <p id="kpi-zakat" class="text-xl font-bold text-red-600">SAR 0</p>
                             </div>
-                            <!-- Removed VAT KPI to make space, as it's part of cash flow -->
                         </div>
+                        
+                        <!-- Benchmark Insights Section Removed -->
                         
                         <!-- Charts --><div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div class="md:col-span-2 bg-white p-4 rounded-lg shadow-sm h-96">
@@ -684,7 +976,6 @@
                                             <th class="py-2 px-2 border-b text-left text-sm font-semibold">Month</th>
                                             <th class="py-2 px-2 border-b text-right text-sm font-semibold">Revenue (P&L)</th>
                                             <th class="py-2 px-2 border-b text-right text-sm font-semibold">Net Profit (P&L)</th>
-                                            <!-- NEW: Cash Balance Column -->
                                             <th class="py-2 px-2 border-b text-right text-sm font-semibold">Cash Balance (EOP)</th>
                                         </tr>
                                     </thead>
@@ -693,6 +984,56 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    
+        <!-- NEW: Market Research Page (Initially Hidden, Enhanced Styling) -->
+        <main id="market-research-page" class="container mx-auto p-4 md:p-6 flex-grow hidden">
+            <div class="bg-white p-8 rounded-2xl shadow-lg">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                    <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Market Research & Analysis (KSA/GCC)</h1>
+                    <button id="back-to-forecast" class="bg-gray-200 text-gray-800 py-2 px-5 rounded-lg hover:bg-gray-300 transition duration-300 font-semibold w-full md:w-auto">
+                        &larr; Back to Forecast
+                    </button>
+                </div>
+
+                <form id="market-research-form" class="mb-8 p-6 bg-gray-50 rounded-lg border">
+                    <label for="market-research-topic" class="block text-lg font-semibold text-gray-700 mb-3">Enter Research Topic:</label>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <input type="text" id="market-research-topic" required class="flex-grow p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-700" placeholder="e.g., 'latest trends in Saudi F&B market', 'competitors for e-commerce in Riyadh'">
+                        <button type="submit" class="bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 transition duration-300 font-semibold flex items-center justify-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <span>Analyze Market</span>
+                        </button>
+                    </div>
+                </form>
+
+                <div id="market-research-loading" class="hidden my-6">
+                    <div class="loader"></div>
+                    <p class="text-center text-gray-600">Analyzing market data... This may take a moment.</p>
+                </div>
+                
+                <div id="market-research-error" class="hidden text-center p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg my-6">
+                    <!-- Error message will be inserted here -->
+                </div>
+
+                <div class="bg-white p-6 rounded-lg border mt-8">
+                     <div class="flex justify-between items-center mb-6 border-b pb-4">
+                        <h3 class="text-2xl font-bold text-[#0A2647]">Analysis Results</h3>
+                        <!-- New Download PDF Button -->
+                        <button id="download-research-pdf" class="hidden bg-red-700 text-white py-2 px-4 rounded-lg hover:bg-red-800 transition duration-300 flex items-center justify-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                            <span>Download Analysis (PDF)</span>
+                        </button>
+                    </div>
+                    <!-- Added prose class for better formatting -->
+                    <div id="market-research-output" class="prose prose-lg max-w-none text-gray-700 mb-8 whitespace-pre-wrap">Enter a topic above to get started...</div> 
+                    <div id="market-research-sources" class="mt-6 border-t pt-6">
+                        <!-- Sources will be listed here -->
                     </div>
                 </div>
             </div>
@@ -823,6 +1164,8 @@
             // --- DYNAMIC DATE CALCULATION ---
             const today = new Date();
             const historicalPeriodStartDate = new Date(today.getFullYear(), today.getMonth() - 12, 1);
+            
+            // --- Benchmark Data Removed ---
 
             // --- DOM ELEMENT SELECTION ---
             const form = document.getElementById('forecast-form');
@@ -924,6 +1267,7 @@
                     openingCashBalance: parseFloat(document.getElementById('opening-cash-balance').value) || 0,
                     revenueLagDays: parseFloat(document.getElementById('revenue-lag-days').value) || 0,
                     expenseLagDays: parseFloat(document.getElementById('expense-lag-days').value) || 0,
+                    // Benchmark Input Removed
                     // Scenario Inputs
                     optimisticModifier: parseFloat(document.getElementById('optimistic-modifier').value) || 0,
                     pessimisticModifier: parseFloat(document.getElementById('pessimistic-modifier').value) || 0,
@@ -1101,11 +1445,19 @@
                         
                         // 6. Calculate running cash balance
                         const cashBalance = Array(24).fill(0);
-                        cashBalance[0] = openingCashBalance + cashInRevenue[0] - cashOutCogs[0] - cashOutOpex[0] - cashOutVat[0] - cashOutZakat[0];
-
-                        for(let i = 1; i < 24; i++) {
-                            cashBalance[i] = cashBalance[i-1] + cashInRevenue[i] - cashOutCogs[i] - cashOutOpex[i] - cashOutVat[i] - cashOutZakat[i];
+                        // Start cash balance calculation from the first *forecast* month (index 12) using opening balance
+                        let previousBalance = openingCashBalance;
+                         // Calculate historical cash balances for context (can be less accurate)
+                        for(let i = 0; i < 12; i++){
+                             cashBalance[i] = previousBalance + cashInRevenue[i] - cashOutCogs[i] - cashOutOpex[i] - cashOutVat[i] - cashOutZakat[i];
+                             previousBalance = cashBalance[i];
                         }
+                        // Continue calculation for forecast period
+                        for(let i = 12; i < 24; i++) {
+                            cashBalance[i] = previousBalance + cashInRevenue[i] - cashOutCogs[i] - cashOutOpex[i] - cashOutVat[i] - cashOutZakat[i];
+                            previousBalance = cashBalance[i]; // Update for next iteration
+                        }
+
 
                         // 7. Compile the final report
                         for (let i = 0; i < 24; i++) {
@@ -1296,12 +1648,14 @@
                     },
                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, title: {display: true, text: `Expenses (${currentCurrency})`, font: {size: 16}}}}
                 });
+                
+                // --- Benchmark Update Function Removed ---
             }
+            
+            // --- Benchmark Logic Removed ---
 
             // --- CSV & PDF ---
             function exportToCSV() {
-                // This function will need an update if you want to export the new cash flow data
-                // For now, it exports the inputs
                 const inputs = getInputs();
                 let csvContent = "data:text/csv;charset=utf-8,";
                 csvContent += "type,name,value\n";
@@ -1312,8 +1666,13 @@
                 });
                 inputs.expenseItems.forEach(exp => csvContent += `expense,${exp.name},${exp.value}\n`);
                 
-                // Add all assumptions, including new cash flow ones
-                const assumptions = ['cogsPercent', 'applyVat', 'zakatBase', 'openingCashBalance', 'revenueLagDays', 'expenseLagDays', 'optimisticModifier', 'pessimisticModifier'];
+                // Add all assumptions (excluding industry)
+                const assumptions = [
+                    'cogsPercent', 'applyVat', 'zakatBase', 
+                    'openingCashBalance', 'revenueLagDays', 'expenseLagDays', 
+                    // 'industry', // Removed
+                    'optimisticModifier', 'pessimisticModifier'
+                ];
                 assumptions.forEach(key => {
                     if (inputs[key] !== undefined) {
                          csvContent += `assumption,${key},${inputs[key]}\n`
@@ -1352,8 +1711,12 @@
                         } else if (trimmedType === 'expense') {
                             addExpenseCategory(trimmedName, parseFloat(trimmedValue));
                         } else if (trimmedType === 'assumption') {
+                            // Skip industry during import
+                            if(trimmedName === 'industry') return; 
+                            
                             // Convert camelCase name from CSV to kebab-case ID
-                            const elId = trimmedName.replace(/([A-Z])/g, '-$1').toLowerCase();
+                            let elId = trimmedName.replace(/([A-Z])/g, '-$1').toLowerCase();
+                            
                             const el = document.getElementById(elId);
                             if (el) {
                                 if (el.type === 'checkbox') {
@@ -1429,6 +1792,9 @@
                         theme: 'striped', 
                         headStyles: { fillColor: [10, 38, 71] }
                     });
+                    
+                    // --- Benchmark section Removed from PDF ---
+                    
                     doc.save(`${companyName.replace(/ /g, '_')}_Financial_Report.pdf`);
                 } catch (error) { console.error("Failed to generate PDF:", error); }
             }
@@ -1451,9 +1817,16 @@
             });
             
             // --- INITIALIZATION ---
-            initializeInputs();
-            runForecast();
+            // Ensure app initialization logic runs only once after login
+            if (!window.appInitialized) { 
+                initializeInputs();
+                runForecast();
+            }
         } // --- End of initializeAppLogic ---
+
+        // Flag to track if app logic has been initialized
+        window.appInitialized = false; 
+
     </script>
 </body>
 </html>
