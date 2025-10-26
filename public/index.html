@@ -84,10 +84,10 @@
         const marketResearchForm = document.getElementById('market-research-form');
         const marketResearchTopic = document.getElementById('market-research-topic');
         const marketResearchOutput = document.getElementById('market-research-output');
-        const marketResearchSources = document.getElementById('market-research-sources');
+        const marketResearchSources = document.getElementById('market-research-sources'); // Sources display restored
         const marketResearchLoading = document.getElementById('market-research-loading');
         const marketResearchError = document.getElementById('market-research-error');
-        const downloadResearchPdfBtn = document.getElementById('download-research-pdf'); // New PDF Button
+        const downloadResearchPdfBtn = document.getElementById('download-research-pdf'); 
 
 
         // --- Page Switching Logic ---
@@ -301,13 +301,14 @@
              if (!topic) return;
 
              marketResearchOutput.textContent = '';
-             marketResearchSources.innerHTML = ''; // Clear previous sources
+             marketResearchSources.innerHTML = ''; 
+             marketResearchSources.classList.remove('hidden'); // Show sources area again
              marketResearchLoading.classList.remove('hidden');
              marketResearchError.classList.add('hidden');
              downloadResearchPdfBtn.classList.add('hidden'); // Hide PDF button initially
 
              try {
-                const result = await fetchMarketResearch(topic);
+                const result = await fetchMarketResearch(topic); // Use Gemini function again
                 marketResearchOutput.textContent = result.text;
                 
                 // Display sources if available
@@ -327,13 +328,15 @@
                         sourcesList.appendChild(li);
                      });
                      marketResearchSources.appendChild(sourcesList);
+                } else {
+                     marketResearchSources.innerHTML = '<p class="text-sm text-gray-500">No specific sources cited for this analysis.</p>'; // Indicate no sources
                 }
                 
                 // Show PDF button on success
                 downloadResearchPdfBtn.classList.remove('hidden'); 
 
              } catch (error) {
-                 console.error("Market Research Error:", error);
+                 console.error("Market Research Error (Gemini):", error);
                  marketResearchError.textContent = `Error: ${error.message || 'Failed to fetch analysis.'}`;
                  marketResearchError.classList.remove('hidden');
              } finally {
@@ -341,10 +344,13 @@
              }
         });
 
-        // --- Gemini API Call Function ---
+        // --- Gemini API Call Function (Restored & Updated Key) ---
         async function fetchMarketResearch(userQuery, retryCount = 0) {
-            const systemPrompt = "Act as an expert market research analyst specializing in the Saudi Arabia and GCC region. Provide a concise, insightful analysis based on the user's query using the most current information available. Focus on key trends, opportunities, challenges, and potential market size where applicable. Structure the response clearly using markdown for readability (headings, lists). If citing sources, ensure they are relevant."; // Added markdown instruction
-            const apiKey = ""; // API key is handled by the environment
+            const systemPrompt = "Act as an expert market research analyst specializing in the Saudi Arabia and GCC region. Provide a concise, insightful analysis based on the user's query using the most current information available. Focus on key trends, opportunities, challenges, and potential market size where applicable. Structure the response clearly using markdown for readability (headings, lists). If citing sources, ensure they are relevant.";
+            
+            // *** UPDATED API KEY - USE WITH CAUTION (SECURITY RISK) ***
+            const apiKey = "AIzaSyBjbvKkV9lY5uBSe5kFIj-oMr3ec3F2VCE"; 
+            
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
             const payload = {
@@ -366,11 +372,20 @@
                     // Handle API errors (like 4xx, 5xx)
                     if (response.status === 429 && retryCount < 3) { // Rate limit error, retry
                         const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000; // Exponential backoff
-                        // console.log(`Rate limited. Retrying in ${delay / 1000}s...`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         return fetchMarketResearch(userQuery, retryCount + 1);
                     }
-                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                     // Try to get more detailed error from Gemini response body
+                    let errorBody = {};
+                    try {
+                        errorBody = await response.json();
+                    } catch(e) { /* Ignore parsing error if body is not JSON */ }
+                    const errorMessage = errorBody?.error?.message || response.statusText || 'Unknown API Error';
+                    // Check for specific API key related messages (common for 403)
+                    if (response.status === 403 && errorMessage.toLowerCase().includes('permission denied') || errorMessage.toLowerCase().includes('api key not valid')) {
+                         throw new Error(`API Error: ${response.status} - Permission denied or invalid API key. Please check your key restrictions (like HTTP referers) in Google Cloud Console.`);
+                    }
+                    throw new Error(`API Error: ${response.status} - ${errorMessage}`);
                 }
 
                 const result = await response.json();
@@ -393,33 +408,34 @@
                      // Handle unexpected response structure or safety blocks
                     const finishReason = candidate?.finishReason;
                     const safetyRatings = candidate?.safetyRatings;
-                    console.error("API Response Issue:", { finishReason, safetyRatings, result });
+                    console.error("Gemini API Response Issue:", { finishReason, safetyRatings, result });
                     let message = 'No content received from API.';
                     if (finishReason === 'SAFETY') message = 'Content blocked due to safety settings.';
+                    else if (finishReason === 'RECITATION') message = 'Content blocked due to potential recitation issues.';
                     else if (finishReason) message = `Generation stopped: ${finishReason}`;
                     throw new Error(message);
                 }
 
             } catch (error) {
+                 console.error("Fetch Error:", error); // Log the actual error
                 // Handle network errors or JSON parsing errors
-                if (retryCount < 3) {
+                if (retryCount < 3 && !(error.message.startsWith('API Error'))) { // Don't retry fatal API errors
                     const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
-                    // console.log(`Network error. Retrying in ${delay / 1000}s...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return fetchMarketResearch(userQuery, retryCount + 1);
                 }
-                throw error; // Re-throw after final retry attempt
+                throw error; // Re-throw after final retry attempt or for API errors
             }
         }
         
-        // --- NEW: Market Research PDF Download Logic ---
+        // --- Market Research PDF Download Logic (Restored Sources) ---
         function downloadMarketResearchPDF() {
             const { jsPDF } = window.jspdf;
             const topic = marketResearchTopic.value.trim();
             const analysisText = marketResearchOutput.textContent;
-            const sourcesHtml = marketResearchSources.innerHTML; // Get HTML to extract links
+            const sourcesHtml = marketResearchSources.innerHTML; // Get HTML again
 
-            if (!analysisText) return;
+            if (!analysisText || analysisText === 'Enter a topic above to get started...') return;
 
             const doc = new jsPDF();
             
@@ -438,12 +454,11 @@
             doc.setTextColor('#555555');
 
             // Add analysis text, handling line breaks
-            // The splitTextToSize function helps wrap long lines
             const splitText = doc.splitTextToSize(analysisText, 180); // 180 is approx width in mm
             doc.text(splitText, 14, 50);
             
-            // Add Sources
-            let finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 50 + (splitText.length * 5); // Estimate Y position after text
+            // Add Sources (Restored)
+            let finalY = 50 + (splitText.length * 5); // Recalculate Y position after text
             if (finalY > 260) { // Add new page if text is too long
                  doc.addPage();
                  finalY = 20;
@@ -451,7 +466,12 @@
                 finalY += 15; // Add some space before sources
             }
             
-            if (sourcesHtml.includes('<li>')) {
+            // Check if there are actual source list items
+            const parser = new DOMParser();
+            const sourcesDoc = parser.parseFromString(sourcesHtml, 'text/html');
+            const links = sourcesDoc.querySelectorAll('a');
+
+            if (links.length > 0) {
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(12);
                 doc.setTextColor('#0A2647');
@@ -461,19 +481,27 @@
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(10);
                 doc.setTextColor('#0645AD'); // Blue for links
-
-                // Extract source links and titles from HTML
-                const parser = new DOMParser();
-                const sourcesDoc = parser.parseFromString(sourcesHtml, 'text/html');
-                const links = sourcesDoc.querySelectorAll('a');
                 
                 links.forEach(link => {
                     if (finalY > 280) { // Check if new page needed for source list
                          doc.addPage();
                          finalY = 20;
                     }
-                    doc.textWithLink(`${link.textContent} (${link.href})`, 14, finalY, { url: link.href });
-                    finalY += 6;
+                    // Add Title first, then URL on a new line or same line if short
+                     const sourceText = `${link.textContent}`;
+                     const sourceUrl = `(${link.href})`;
+                     const combinedText = `${sourceText} ${sourceUrl}`;
+                     
+                     if (doc.getTextWidth(combinedText) <= 180) {
+                        doc.textWithLink(combinedText, 14, finalY, { url: link.href });
+                         finalY += 6;
+                     } else {
+                        doc.text(sourceText, 14, finalY);
+                         finalY += 4;
+                         doc.textWithLink(sourceUrl, 14, finalY, { url: link.href });
+                        finalY += 6;
+                     }
+                    
                 });
             }
 
@@ -1032,6 +1060,7 @@
                     </div>
                     <!-- Added prose class for better formatting -->
                     <div id="market-research-output" class="prose prose-lg max-w-none text-gray-700 mb-8 whitespace-pre-wrap">Enter a topic above to get started...</div> 
+                    <!-- Sources Section Display Restored -->
                     <div id="market-research-sources" class="mt-6 border-t pt-6">
                         <!-- Sources will be listed here -->
                     </div>
@@ -1535,7 +1564,6 @@
 
                 document.getElementById('kpi-annual-revenue').textContent = formatter.format(kpis.annualRevenue * conversionRate);
                 document.getElementById('kpi-net-margin').textContent = `${kpis.netMargin.toFixed(1)}%`;
-                // document.getElementById('kpi-vat').textContent = formatter.format(kpis.vat * conversionRate); // Removed to make space
                 document.getElementById('kpi-zakat').textContent = formatter.format(kpis.zakat * conversionRate);
                 // Update new Cash Balance KPI
                 const kpiCashEl = document.getElementById('kpi-cash-balance');
