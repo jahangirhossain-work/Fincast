@@ -20,17 +20,22 @@
             createUserWithEmailAndPassword, 
             signInWithEmailAndPassword,
             sendEmailVerification,
-            signOut 
+            signOut,
+            sendPasswordResetEmail,
+            GoogleAuthProvider, // Added for Google Sign-In
+            signInWithPopup,    // Added for Google Sign-In
+            getAdditionalUserInfo // Added to check if user is new
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
             doc, 
             setDoc,
-            getDoc, // Added getDoc to read profile data
-            setLogLevel
+            getDoc, 
+            setLogLevel,
+            serverTimestamp // Added to save creation time for Google users
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Your web app's Firebase configuration from your screenshot
+        // Your web app's Firebase configuration
         const firebaseConfig = {
           apiKey: "AIzaSyA_4vxHARnQxPYOI3EUkbbukDjJZDJSar4",
           authDomain: "fincast-983c8.firebaseapp.com",
@@ -45,7 +50,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        setLogLevel('Debug'); // Enable Firestore debug logging
+        setLogLevel('Debug'); 
 
         // --- App ID for Firestore ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -60,8 +65,12 @@
         const authMessage = document.getElementById('auth-message');
         const verificationMessage = document.getElementById('verification-message');
         const resendVerificationBtn = document.getElementById('resend-verification');
+        const forgotPasswordBtn = document.getElementById('forgot-password'); 
+        const googleSignInBtn = document.getElementById('google-signin-button'); // New Google Button
+
         
         // --- Modal/Profile/Page Switching DOM Elements ---
+        // ... (rest of the elements remain the same) ...
         const logoutBtn = document.getElementById('logout-button');
         const logoutModal = document.getElementById('logout-modal');
         const cancelLogoutBtn = document.getElementById('cancel-logout');
@@ -84,14 +93,15 @@
         const marketResearchForm = document.getElementById('market-research-form');
         const marketResearchTopic = document.getElementById('market-research-topic');
         const marketResearchOutput = document.getElementById('market-research-output');
-        const marketResearchSources = document.getElementById('market-research-sources'); // Sources display restored
+        const marketResearchSources = document.getElementById('market-research-sources'); 
         const marketResearchLoading = document.getElementById('market-research-loading');
         const marketResearchError = document.getElementById('market-research-error');
         const downloadResearchPdfBtn = document.getElementById('download-research-pdf'); 
 
 
         // --- Page Switching Logic ---
-        showMarketResearchBtn.addEventListener('click', () => {
+        // ... (remains the same) ...
+         showMarketResearchBtn.addEventListener('click', () => {
             appMainContent.classList.add('hidden');
             marketResearchPage.classList.remove('hidden');
         });
@@ -100,75 +110,93 @@
             marketResearchPage.classList.add('hidden');
             appMainContent.classList.remove('hidden');
         });
+
         
         // --- Auth UI Toggling ---
+        // ... (remains the same) ...
         showRegisterBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            clearAuthMessageStyle(); // Clear style on switch
             loginForm.classList.add('hidden');
             registerForm.classList.remove('hidden');
             authMessage.textContent = '';
         });
         showLoginBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            clearAuthMessageStyle(); // Clear style on switch
             loginForm.classList.remove('hidden');
             registerForm.classList.add('hidden');
             authMessage.textContent = '';
         });
 
         // --- Auth Message Helper ---
+        // ... (remains the same) ...
         function setAuthMessage(message, isError = true) {
             authMessage.textContent = message;
-            if (isError) authMessage.classList.add('text-red-500');
-            else authMessage.classList.remove('text-red-500');
+            if (isError) {
+                authMessage.classList.add('text-red-500');
+                authMessage.classList.remove('text-green-600');
+            } else { 
+                authMessage.classList.remove('text-red-500');
+                authMessage.classList.add('text-green-600'); // Use green for success messages
+            }
+        }
+        
+        // Clear message styling helper
+        function clearAuthMessageStyle() {
+             authMessage.classList.remove('text-red-500', 'text-green-600');
         }
 
         // --- Auth State Change Listener ---
+        // ... (remains the same) ...
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                if (user.emailVerified) {
-                    // User is signed in and verified
+                // For Google Sign-In users, emailVerified is usually true by default
+                if (user.emailVerified || user.providerData.some(p => p.providerId === 'google.com')) {
+                    // User is signed in and verified OR signed in via Google
                     authContainer.classList.add('hidden');
                     appContainer.classList.remove('hidden');
                     appContainer.classList.add('flex'); // Make it flex
                     
-                    // Ensure the forecast page is shown by default on login
                     marketResearchPage.classList.add('hidden');
                     appMainContent.classList.remove('hidden');
 
-                    // Initialize the main application logic
                     if (typeof initializeAppLogic === 'function') {
-                        // Check if already initialized to prevent multiple chart instances
                         if (!window.appInitialized) {
                             initializeAppLogic();
-                            window.appInitialized = true; // Set a flag
+                            window.appInitialized = true; 
                         }
                     } else {
                         console.error("Main app logic (initializeAppLogic) not found!");
                     }
                 } else {
-                    // User is signed in but not verified
+                    // User signed in with email/pass but not verified
                     authContainer.classList.remove('hidden');
                     appContainer.classList.add('hidden');
                     appContainer.classList.remove('flex');
                     loginForm.classList.add('hidden');
                     registerForm.classList.add('hidden');
                     verificationMessage.classList.remove('hidden');
-                    window.appInitialized = false; // Reset flag on logout/verification needed
+                    window.appInitialized = false; 
                 }
             } else {
                 // User is signed out
                 authContainer.classList.remove('hidden');
                 appContainer.classList.add('hidden');
                 appContainer.classList.remove('flex');
-                loginForm.classList.remove('hidden');
+                loginForm.classList.remove('hidden'); 
                 registerForm.classList.add('hidden');
                 verificationMessage.classList.add('hidden');
-                window.appInitialized = false; // Reset flag on logout
+                 authMessage.textContent = ''; 
+                 clearAuthMessageStyle();
+                window.appInitialized = false; 
             }
         });
 
         // --- Resend Verification ---
-        resendVerificationBtn.addEventListener('click', async () => {
+        // ... (remains the same) ...
+         resendVerificationBtn.addEventListener('click', async () => {
+            clearAuthMessageStyle();
             try {
                 await sendEmailVerification(auth.currentUser);
                 setAuthMessage('A new verification email has been sent.', false);
@@ -178,20 +206,29 @@
         });
 
         // --- Login Logic ---
+        // ... (remains the same) ...
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = loginForm.email.value;
             const password = loginForm.password.value;
+            clearAuthMessageStyle();
             setAuthMessage('Signing in...', false);
             try {
                 await signInWithEmailAndPassword(auth, email, password);
                 // Auth state listener (onAuthStateChanged) will handle the UI switch
             } catch (error) {
-                setAuthMessage(error.message);
+                 // --- Improved Error Handling ---
+                if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+                    setAuthMessage('Incorrect email or password. Please try again.');
+                } else {
+                    console.error("Login Error:", error); // Log detailed error for debugging
+                    setAuthMessage(error.message || 'An unexpected error occurred during sign-in.');
+                }
             }
         });
 
         // --- Registration Logic ---
+        // ... (remains the same) ...
         registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const name = registerForm.name.value;
@@ -200,6 +237,7 @@
             const company = registerForm.company.value;
             const password = registerForm.password.value;
             
+            clearAuthMessageStyle();
             setAuthMessage('Registering...', false);
 
             try {
@@ -214,7 +252,7 @@
                     email: email,
                     phone: phone,
                     company: company,
-                    createdAt: new Date()
+                    createdAt: serverTimestamp() // Use server timestamp
                 });
 
                 await sendEmailVerification(user);
@@ -225,12 +263,88 @@
 
             } catch (error) {
                 console.error("Registration Error:", error);
-                setAuthMessage(error.message);
+                 if (error.code === 'auth/email-already-in-use') {
+                    setAuthMessage('This email address is already registered. Please sign in or use a different email.');
+                 } else {
+                    setAuthMessage(error.message || 'An unexpected error occurred during registration.');
+                 }
+            }
+        });
+        
+        // --- Forgot Password Logic ---
+        // ... (remains the same) ...
+        forgotPasswordBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            clearAuthMessageStyle();
+            const email = loginForm.email.value; // Get email from the login form
+            if (!email) {
+                // Instead of alert, show message in auth area
+                setAuthMessage('Please enter your email address in the field above first.');
+                return;
+            }
+            
+            setAuthMessage('Sending password reset email...', false);
+            try {
+                await sendPasswordResetEmail(auth, email);
+                setAuthMessage('Password reset email sent! Check your inbox (and spam folder).', false);
+            } catch (error) {
+                console.error("Password Reset Error:", error);
+                 if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-email') {
+                    setAuthMessage('No account found with this email address, or the format is invalid.');
+                 } else {
+                    setAuthMessage(error.message || 'Failed to send password reset email.');
+                 }
+            }
+        });
+        
+        // --- NEW: Google Sign-In Logic ---
+        googleSignInBtn.addEventListener('click', async () => {
+            clearAuthMessageStyle();
+            setAuthMessage('Redirecting to Google Sign-In...', false);
+            const provider = new GoogleAuthProvider();
+            try {
+                const result = await signInWithPopup(auth, provider);
+                const user = result.user;
+                const additionalUserInfo = getAdditionalUserInfo(result);
+
+                // Check if it's a new user *in your app*
+                if (additionalUserInfo?.isNewUser) {
+                    console.log('New user signed in via Google:', user.uid);
+                    // Create a profile document for the new user in Firestore
+                    const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'details');
+                    try {
+                        await setDoc(userProfileRef, {
+                            name: user.displayName || 'Google User',
+                            email: user.email,
+                            phone: user.phoneNumber || '', // Often null from Google
+                            company: '', // Ask for this later if needed
+                            createdAt: serverTimestamp(),
+                            provider: 'google.com' // Track the sign-in method
+                        }, { merge: true }); // Use merge to avoid overwriting if doc somehow exists
+                         console.log('Firestore profile created for new Google user.');
+                    } catch (dbError) {
+                        console.error("Error creating Firestore profile for Google user:", dbError);
+                        // Don't block login, but log the error
+                    }
+                }
+                // onAuthStateChanged will handle showing the app container
+            } catch (error) {
+                console.error("Google Sign-In Error:", error);
+                // Handle specific errors like popup blocked or closed
+                if (error.code === 'auth/popup-closed-by-user') {
+                    setAuthMessage('Google Sign-In cancelled.');
+                } else if (error.code === 'auth/popup-blocked') {
+                     setAuthMessage('Popup blocked by browser. Please allow popups for this site.');
+                } else {
+                    setAuthMessage(error.message || 'An error occurred during Google Sign-In.');
+                }
             }
         });
 
+
         // --- Logout Logic (with Confirmation) ---
-        logoutBtn.addEventListener('click', () => {
+        // ... (remains the same) ...
+         logoutBtn.addEventListener('click', () => {
             logoutModal.classList.remove('hidden'); // Show confirmation modal
         });
         cancelLogoutBtn.addEventListener('click', () => {
@@ -250,6 +364,7 @@
         });
 
         // --- Profile Modal Logic ---
+        // ... (remains the same) ...
         showProfileBtn.addEventListener('click', async () => {
             const user = auth.currentUser;
             if (!user) return; // Should not happen if user is logged in
@@ -273,10 +388,10 @@
                     profilePhone.textContent = data.phone || 'Not set';
                     profileCompany.textContent = data.company || 'Not set';
                 } else {
-                    // This case might happen if registration was interrupted
-                    profileName.textContent = 'No profile data found.';
+                    // This case might happen if registration was interrupted or Google sign in didn't save
+                    profileName.textContent = user.displayName || 'No profile data found.';
                     profileEmail.textContent = user.email; // Fallback to auth email
-                    profilePhone.textContent = 'N/A';
+                    profilePhone.textContent = user.phoneNumber || 'N/A';
                     profileCompany.textContent = 'N/A';
                 }
             } catch (error) {
@@ -295,7 +410,8 @@
         });
 
         // --- Market Research Logic (Gemini API Call) ---
-        marketResearchForm.addEventListener('submit', async (e) => {
+        // ... (remains the same) ...
+         marketResearchForm.addEventListener('submit', async (e) => {
              e.preventDefault();
              const topic = marketResearchTopic.value.trim();
              if (!topic) return;
@@ -344,11 +460,12 @@
              }
         });
 
-        // --- Gemini API Call Function (Restored & Updated Key) ---
+        // --- Gemini API Call Function ---
+        // ... (remains the same, using the explicit API key now) ...
         async function fetchMarketResearch(userQuery, retryCount = 0) {
             const systemPrompt = "Act as an expert market research analyst specializing in the Saudi Arabia and GCC region. Provide a concise, insightful analysis based on the user's query using the most current information available. Focus on key trends, opportunities, challenges, and potential market size where applicable. Structure the response clearly using markdown for readability (headings, lists). If citing sources, ensure they are relevant.";
             
-            // *** UPDATED API KEY - USE WITH CAUTION (SECURITY RISK) ***
+            // *** USING PROVIDED API KEY - REMEMBER SECURITY RISK ***
             const apiKey = "AIzaSyBjbvKkV9lY5uBSe5kFIj-oMr3ec3F2VCE"; 
             
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
@@ -382,7 +499,7 @@
                     } catch(e) { /* Ignore parsing error if body is not JSON */ }
                     const errorMessage = errorBody?.error?.message || response.statusText || 'Unknown API Error';
                     // Check for specific API key related messages (common for 403)
-                    if (response.status === 403 && errorMessage.toLowerCase().includes('permission denied') || errorMessage.toLowerCase().includes('api key not valid')) {
+                    if (response.status === 403 && (errorMessage.toLowerCase().includes('permission denied') || errorMessage.toLowerCase().includes('api key not valid'))) {
                          throw new Error(`API Error: ${response.status} - Permission denied or invalid API key. Please check your key restrictions (like HTTP referers) in Google Cloud Console.`);
                     }
                     throw new Error(`API Error: ${response.status} - ${errorMessage}`);
@@ -428,8 +545,9 @@
             }
         }
         
-        // --- Market Research PDF Download Logic (Restored Sources) ---
-        function downloadMarketResearchPDF() {
+        // --- Market Research PDF Download Logic ---
+        // ... (remains the same) ...
+         function downloadMarketResearchPDF() {
             const { jsPDF } = window.jspdf;
             const topic = marketResearchTopic.value.trim();
             const analysisText = marketResearchOutput.textContent;
@@ -514,7 +632,8 @@
 
 
         // --- Custom Cursor Logic ---
-        document.addEventListener('DOMContentLoaded', () => {
+        // ... (remains the same) ...
+         document.addEventListener('DOMContentLoaded', () => {
             // Create the cursor elements and add them to the body
             const cursorDot = document.createElement('div');
             cursorDot.id = 'custom-cursor-dot';
@@ -776,7 +895,7 @@
                 </a>
             </div>
 
-            <!-- Auth Error Message --><div id="auth-message" class="text-center font-medium text-red-500"></div>
+            <!-- Auth Error Message --><div id="auth-message" class="text-center font-medium min-h-[1.25rem]"></div> <!-- Added min-height -->
 
             <!-- Email Verification Message --><div id="verification-message" class="hidden text-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <h3 class="font-bold text-yellow-800">Verify Your Email</h3>
@@ -795,10 +914,26 @@
                     <input id="login-email" name="email" type="email" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]" placeholder="you@company.com">
                 </div>
                 <div>
-                    <label for="login-password" class="font-medium text-gray-700">Password</label>
+                     <div class="flex justify-between items-center">
+                         <label for="login-password" class="font-medium text-gray-700">Password</label>
+                         <!-- New Forgot Password Link -->
+                         <a href="#" id="forgot-password" class="text-sm font-semibold text-blue-600 hover:underline">Forgot password?</a>
+                     </div>
                     <input id="login-password" name="password" type="password" required class="w-full mt-1 p-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#FFB830]" placeholder="••••••••">
                 </div>
                 <button type="submit" class="w-full bg-[#0A2647] text-white py-3 rounded-lg hover:bg-[#1B3A5F] transition duration-300 font-semibold">Sign In</button>
+                
+                <!-- Google Sign-In Button -->
+                <div class="relative flex py-3 items-center">
+                    <div class="flex-grow border-t border-gray-300"></div>
+                    <span class="flex-shrink mx-4 text-gray-400 text-sm">OR</span>
+                    <div class="flex-grow border-t border-gray-300"></div>
+                </div>
+                <button type="button" id="google-signin-button" class="w-full flex justify-center items-center gap-3 bg-white border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-50 transition duration-300 font-medium">
+                    <svg class="w-5 h-5" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill="#FFC107" d="M43.611 20.083H42V20H24V28H35.303C34.043 32.61 30.073 36 24 36C18.477 36 14 31.523 14 26C14 20.477 18.477 16 24 16C26.7 16 29.113 17.068 30.938 18.818L36.878 12.878C33.723 9.778 29.138 8 24 8C12.955 8 4 16.955 4 28C4 39.045 12.955 48 24 48C35.045 48 44 39.045 44 28C44 25.95 43.863 23.955 43.611 22.083V20.083Z"></path><path fill="#FF3D00" d="M6.306 14.691L12.364 19.318C14.072 17.133 16.733 16 19.5 16H20.5V15.5H19.5C16.9 15.5 14.438 16.633 12.878 18.818L6.878 12.878C9.723 9.778 14.138 8 19 8C21.7 8 24.113 9.068 25.938 10.818L31.878 4.878C28.723 1.778 24.138 0 19 0C11.955 0 5.045 5.955 5.045 13C5.045 13.95 5.182 14.955 5.306 15.691Z"></path><path fill="#4CAF50" d="M24 48C31.045 48 37.955 42.045 37.955 35C37.955 32.95 37.818 30.955 37.611 29.083H36V28H24V36H35.303C34.043 40.61 30.073 44 24 44C21.3 44 18.887 42.932 17.062 41.182L11.122 47.122C14.277 50.222 18.862 52 24 52C29.045 52 33.955 50.045 36.878 47.122L30.938 41.182C33.723 44.222 37.138 46 42 46C42.7 46 43.113 45.932 43.938 45.182L47.878 39.122C44.277 44.222 40.862 48 36 48Z"></path><path fill="#1976D2" d="M43.611 20.083H42V20H24V28H35.303C34.625 30.033 33.267 31.812 31.387 33.072L31.737 33.322L37.062 38.818C41.455 35.618 44 31.03 44 26C44 23.95 43.863 21.955 43.611 20.083Z"></path></svg>
+                    <span>Sign in with Google</span>
+                </button>
+                
                 <p class="text-center text-sm text-gray-600">
                     No account? <a href="#" id="show-register" class="font-semibold text-blue-600 hover:underline">Register now</a>
                 </p>
@@ -837,7 +972,8 @@
 
     <!-- Main App Container (Initially Hidden) --><div id="app-container" class="hidden flex-grow flex-col">
         <!-- Header --><header class="bg-[#0A2647] shadow-lg sticky top-0 z-50">
-            <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+           <!-- ... (Header content remains the same) ... -->
+             <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
                 <a href="#" class="text-2xl font-bold text-white">
                     Fin-Cast<span class="text-[#FFB830]">.</span>
                 </a>
@@ -870,7 +1006,9 @@
 
         <!-- Wrapper for the main forecast content -->
         <main id="app-main-content" class="container mx-auto p-4 md:p-6 flex-grow">
-            <!-- Main Application --><div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
+            <!-- Main Application -->
+             <!-- ... (Main App content remains the same) ... -->
+             <div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
                 <div class="text-center mb-8">
                     <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Advanced Financial Forecasting & Reporting</h1>
                     <p class="text-gray-600 mt-2 max-w-3xl mx-auto">An intuitive forecasting tool for businesses in Saudi Arabia, the GCC, and beyond. Leverage our advanced analytical engine to gain clearer financial insights.</p>
@@ -1017,8 +1155,9 @@
             </div>
         </main>
     
-        <!-- NEW: Market Research Page (Initially Hidden, Enhanced Styling) -->
-        <main id="market-research-page" class="container mx-auto p-4 md:p-6 flex-grow hidden">
+        <!-- NEW: Market Research Page -->
+         <!-- ... (Market Research content remains the same) ... -->
+          <main id="market-research-page" class="container mx-auto p-4 md:p-6 flex-grow hidden">
             <div class="bg-white p-8 rounded-2xl shadow-lg">
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                     <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Market Research & Analysis (KSA/GCC)</h1>
@@ -1068,7 +1207,9 @@
             </div>
         </main>
     
-        <!-- Contact Modal --><div id="contact-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden">
+        <!-- Contact Modal -->
+         <!-- ... (Modals remain the same) ... -->
+          <div id="contact-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden">
             <div class="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md m-4 relative z-[61]">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold text-[#0A2647]">Request a Full Analysis</h2>
@@ -1150,7 +1291,9 @@
             </div>
         </div>
         
-        <!-- Footer --><footer class="bg-[#0A2647] text-gray-300 mt-8">
+        <!-- Footer -->
+         <!-- ... (Footer remains the same) ... -->
+         <footer class="bg-[#0A2647] text-gray-300 mt-8">
             <div class="container mx-auto py-8 px-6">
                 <div class="flex flex-col items-center text-center">
                      <a href="#" class="text-2xl font-bold text-white mb-4">
@@ -1171,22 +1314,14 @@
         </footer>
     </div> <!-- End App Container --><script>
         // --- AUTH LOGIC (non-module) ---
-        // This script tag must be AFTER the first <script type="module"> tag
-        // It accesses the 'auth' and 'db' variables initialized in that script
-        // We're splitting this to avoid "module-scoped" errors
-        
-        // NOTE: This is a workaround for variables not being global in modules.
-        // A better long-term solution is a proper build step or refactoring
-        // to pass 'auth' and 'db' explicitly, but this works for a single file.
-        
-        // This script space is intentionally left blank in this version.
-        // The auth logic was moved into the module script to fix reference errors.
+         // ... (Intentionally blank) ...
     </script>
 
     <script>
         // --- MAIN APP LOGIC ---
         // This function is called by the auth listener once the user is verified
         function initializeAppLogic() {
+            // ... (Forecast Logic remains the same) ...
             const { jsPDF } = window.jspdf;
             const SAR_TO_USD_RATE = 0.27;
 
