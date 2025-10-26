@@ -24,15 +24,15 @@
             sendPasswordResetEmail,
             GoogleAuthProvider, // Added for Google Sign-In
             signInWithPopup,    // Added for Google Sign-In
-            getAdditionalUserInfo // Added to check if user is new
+            getAdditionalUserInfo // Added for Google Sign-In profile check
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
             doc, 
             setDoc,
-            getDoc, 
+            getDoc, // Added getDoc to read profile data
             setLogLevel,
-            serverTimestamp // Added to save creation time for Google users
+            serverTimestamp // Added for timestamp on registration
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Your web app's Firebase configuration
@@ -50,7 +50,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        setLogLevel('Debug'); 
+        setLogLevel('Debug'); // Enable Firestore debug logging
 
         // --- App ID for Firestore ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -66,11 +66,10 @@
         const verificationMessage = document.getElementById('verification-message');
         const resendVerificationBtn = document.getElementById('resend-verification');
         const forgotPasswordBtn = document.getElementById('forgot-password'); 
-        const googleSignInBtn = document.getElementById('google-signin-button'); // New Google Button
+        const googleSignInBtn = document.getElementById('google-signin-button'); // Google Button
 
         
         // --- Modal/Profile/Page Switching DOM Elements ---
-        // ... (rest of the elements remain the same) ...
         const logoutBtn = document.getElementById('logout-button');
         const logoutModal = document.getElementById('logout-modal');
         const cancelLogoutBtn = document.getElementById('cancel-logout');
@@ -85,10 +84,10 @@
         const profilePhone = document.getElementById('profile-phone');
         const profileCompany = document.getElementById('profile-company');
         
-        // --- New Market Research Page Elements ---
+        // --- Market Research Page Elements ---
         const showMarketResearchBtn = document.getElementById('show-market-research');
         const marketResearchPage = document.getElementById('market-research-page');
-        const appMainContent = document.getElementById('app-main-content'); // Wrapper for forecast view
+        const appMainContent = document.getElementById('app-main-content'); 
         const backToForecastBtn = document.getElementById('back-to-forecast');
         const marketResearchForm = document.getElementById('market-research-form');
         const marketResearchTopic = document.getElementById('market-research-topic');
@@ -100,8 +99,7 @@
 
 
         // --- Page Switching Logic ---
-        // ... (remains the same) ...
-         showMarketResearchBtn.addEventListener('click', () => {
+        showMarketResearchBtn.addEventListener('click', () => {
             appMainContent.classList.add('hidden');
             marketResearchPage.classList.remove('hidden');
         });
@@ -110,27 +108,24 @@
             marketResearchPage.classList.add('hidden');
             appMainContent.classList.remove('hidden');
         });
-
         
         // --- Auth UI Toggling ---
-        // ... (remains the same) ...
         showRegisterBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            clearAuthMessageStyle(); // Clear style on switch
+            clearAuthMessageStyle(); 
             loginForm.classList.add('hidden');
             registerForm.classList.remove('hidden');
             authMessage.textContent = '';
         });
         showLoginBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            clearAuthMessageStyle(); // Clear style on switch
+            clearAuthMessageStyle(); 
             loginForm.classList.remove('hidden');
             registerForm.classList.add('hidden');
             authMessage.textContent = '';
         });
 
         // --- Auth Message Helper ---
-        // ... (remains the same) ...
         function setAuthMessage(message, isError = true) {
             authMessage.textContent = message;
             if (isError) {
@@ -138,25 +133,22 @@
                 authMessage.classList.remove('text-green-600');
             } else { 
                 authMessage.classList.remove('text-red-500');
-                authMessage.classList.add('text-green-600'); // Use green for success messages
+                authMessage.classList.add('text-green-600'); 
             }
         }
         
-        // Clear message styling helper
         function clearAuthMessageStyle() {
              authMessage.classList.remove('text-red-500', 'text-green-600');
         }
 
         // --- Auth State Change Listener ---
-        // ... (remains the same) ...
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // For Google Sign-In users, emailVerified is usually true by default
+                // Allow login if email is verified OR if the user signed in via Google
                 if (user.emailVerified || user.providerData.some(p => p.providerId === 'google.com')) {
-                    // User is signed in and verified OR signed in via Google
                     authContainer.classList.add('hidden');
                     appContainer.classList.remove('hidden');
-                    appContainer.classList.add('flex'); // Make it flex
+                    appContainer.classList.add('flex'); 
                     
                     marketResearchPage.classList.add('hidden');
                     appMainContent.classList.remove('hidden');
@@ -170,7 +162,7 @@
                         console.error("Main app logic (initializeAppLogic) not found!");
                     }
                 } else {
-                    // User signed in with email/pass but not verified
+                    // User signed up with email/pass but hasn't verified
                     authContainer.classList.remove('hidden');
                     appContainer.classList.add('hidden');
                     appContainer.classList.remove('flex');
@@ -194,7 +186,6 @@
         });
 
         // --- Resend Verification ---
-        // ... (remains the same) ...
          resendVerificationBtn.addEventListener('click', async () => {
             clearAuthMessageStyle();
             try {
@@ -206,7 +197,6 @@
         });
 
         // --- Login Logic ---
-        // ... (remains the same) ...
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = loginForm.email.value;
@@ -215,20 +205,17 @@
             setAuthMessage('Signing in...', false);
             try {
                 await signInWithEmailAndPassword(auth, email, password);
-                // Auth state listener (onAuthStateChanged) will handle the UI switch
             } catch (error) {
-                 // --- Improved Error Handling ---
                 if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
                     setAuthMessage('Incorrect email or password. Please try again.');
                 } else {
-                    console.error("Login Error:", error); // Log detailed error for debugging
+                    console.error("Login Error:", error); 
                     setAuthMessage(error.message || 'An unexpected error occurred during sign-in.');
                 }
             }
         });
 
         // --- Registration Logic ---
-        // ... (remains the same) ...
         registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const name = registerForm.name.value;
@@ -272,13 +259,11 @@
         });
         
         // --- Forgot Password Logic ---
-        // ... (remains the same) ...
         forgotPasswordBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             clearAuthMessageStyle();
-            const email = loginForm.email.value; // Get email from the login form
+            const email = loginForm.email.value; 
             if (!email) {
-                // Instead of alert, show message in auth area
                 setAuthMessage('Please enter your email address in the field above first.');
                 return;
             }
@@ -297,7 +282,7 @@
             }
         });
         
-        // --- NEW: Google Sign-In Logic ---
+        // --- Google Sign-In Logic ---
         googleSignInBtn.addEventListener('click', async () => {
             clearAuthMessageStyle();
             setAuthMessage('Redirecting to Google Sign-In...', false);
@@ -307,30 +292,29 @@
                 const user = result.user;
                 const additionalUserInfo = getAdditionalUserInfo(result);
 
-                // Check if it's a new user *in your app*
+                // If it's a new user via Google, create their profile in Firestore
                 if (additionalUserInfo?.isNewUser) {
                     console.log('New user signed in via Google:', user.uid);
-                    // Create a profile document for the new user in Firestore
                     const userProfileRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'details');
                     try {
+                        // Use merge: true to avoid overwriting existing data if somehow possible, though unlikely for new user
                         await setDoc(userProfileRef, {
                             name: user.displayName || 'Google User',
                             email: user.email,
-                            phone: user.phoneNumber || '', // Often null from Google
-                            company: '', // Ask for this later if needed
+                            phone: user.phoneNumber || '', // Often not provided by Google
+                            company: '', // Ask later or leave blank
                             createdAt: serverTimestamp(),
-                            provider: 'google.com' // Track the sign-in method
-                        }, { merge: true }); // Use merge to avoid overwriting if doc somehow exists
+                            provider: 'google.com' // Track the provider
+                        }, { merge: true }); 
                          console.log('Firestore profile created for new Google user.');
                     } catch (dbError) {
                         console.error("Error creating Firestore profile for Google user:", dbError);
-                        // Don't block login, but log the error
+                        // Non-fatal error, user is still logged in
                     }
                 }
-                // onAuthStateChanged will handle showing the app container
+                // onAuthStateChanged will handle showing the app
             } catch (error) {
                 console.error("Google Sign-In Error:", error);
-                // Handle specific errors like popup blocked or closed
                 if (error.code === 'auth/popup-closed-by-user') {
                     setAuthMessage('Google Sign-In cancelled.');
                 } else if (error.code === 'auth/popup-blocked') {
@@ -343,18 +327,16 @@
 
 
         // --- Logout Logic (with Confirmation) ---
-        // ... (remains the same) ...
          logoutBtn.addEventListener('click', () => {
-            logoutModal.classList.remove('hidden'); // Show confirmation modal
+            logoutModal.classList.remove('hidden'); 
         });
         cancelLogoutBtn.addEventListener('click', () => {
-            logoutModal.classList.add('hidden'); // Hide modal
+            logoutModal.classList.add('hidden'); 
         });
         confirmLogoutBtn.addEventListener('click', async () => {
             try {
                 await signOut(auth);
                 logoutModal.classList.add('hidden');
-                // onAuthStateChanged will handle hiding the app
             } catch (error) {
                 console.error("Logout Error:", error);
             }
@@ -364,12 +346,10 @@
         });
 
         // --- Profile Modal Logic ---
-        // ... (remains the same) ...
         showProfileBtn.addEventListener('click', async () => {
             const user = auth.currentUser;
-            if (!user) return; // Should not happen if user is logged in
+            if (!user) return; 
 
-            // Set loading text
             profileName.textContent = 'Loading...';
             profileEmail.textContent = 'Loading...';
             profilePhone.textContent = 'Loading...';
@@ -388,9 +368,10 @@
                     profilePhone.textContent = data.phone || 'Not set';
                     profileCompany.textContent = data.company || 'Not set';
                 } else {
-                    // This case might happen if registration was interrupted or Google sign in didn't save
+                    // Fallback for users who signed up with Google before profile creation existed
+                    // or if profile creation failed
                     profileName.textContent = user.displayName || 'No profile data found.';
-                    profileEmail.textContent = user.email; // Fallback to auth email
+                    profileEmail.textContent = user.email; 
                     profilePhone.textContent = user.phoneNumber || 'N/A';
                     profileCompany.textContent = 'N/A';
                 }
@@ -409,25 +390,24 @@
             if (e.target === profileModal) profileModal.classList.add('hidden');
         });
 
-        // --- Market Research Logic (Gemini API Call) ---
-        // ... (remains the same) ...
-         marketResearchForm.addEventListener('submit', async (e) => {
+        // --- Market Research Logic (Calls Serverless Function) ---
+        marketResearchForm.addEventListener('submit', async (e) => {
              e.preventDefault();
              const topic = marketResearchTopic.value.trim();
              if (!topic) return;
 
              marketResearchOutput.textContent = '';
              marketResearchSources.innerHTML = ''; 
-             marketResearchSources.classList.remove('hidden'); // Show sources area again
+             marketResearchSources.classList.remove('hidden'); 
              marketResearchLoading.classList.remove('hidden');
              marketResearchError.classList.add('hidden');
-             downloadResearchPdfBtn.classList.add('hidden'); // Hide PDF button initially
+             downloadResearchPdfBtn.classList.add('hidden'); 
 
              try {
-                const result = await fetchMarketResearch(topic); // Use Gemini function again
+                // *** UPDATED TO CALL SERVERLESS FUNCTION ***
+                const result = await fetchMarketResearch(topic); 
                 marketResearchOutput.textContent = result.text;
                 
-                // Display sources if available
                 if (result.sources && result.sources.length > 0) {
                      marketResearchSources.innerHTML = '<h4 class="text-lg font-semibold mb-2 text-gray-700">Sources:</h4>';
                      const sourcesList = document.createElement('ul');
@@ -437,7 +417,7 @@
                         const a = document.createElement('a');
                         a.href = source.uri;
                         a.textContent = source.title;
-                        a.target = '_blank'; // Open in new tab
+                        a.target = '_blank'; 
                         a.rel = 'noopener noreferrer';
                         a.className = 'text-blue-600 hover:underline';
                         li.appendChild(a);
@@ -445,119 +425,63 @@
                      });
                      marketResearchSources.appendChild(sourcesList);
                 } else {
-                     marketResearchSources.innerHTML = '<p class="text-sm text-gray-500">No specific sources cited for this analysis.</p>'; // Indicate no sources
+                     marketResearchSources.innerHTML = '<p class="text-sm text-gray-500">No specific sources cited for this analysis.</p>'; 
                 }
                 
-                // Show PDF button on success
                 downloadResearchPdfBtn.classList.remove('hidden'); 
 
              } catch (error) {
-                 console.error("Market Research Error (Gemini):", error);
-                 marketResearchError.textContent = `Error: ${error.message || 'Failed to fetch analysis.'}`;
+                 console.error("Market Research Error:", error); // Keep general console log
+                 // Display user-friendly error from serverless function or fetch failure
+                 marketResearchError.textContent = `Error: ${error.message || 'Failed to fetch analysis.'}`; 
                  marketResearchError.classList.remove('hidden');
              } finally {
                  marketResearchLoading.classList.add('hidden');
              }
         });
 
-        // --- Gemini API Call Function ---
-        // ... (remains the same, using the explicit API key now) ...
-        async function fetchMarketResearch(userQuery, retryCount = 0) {
-            const systemPrompt = "Act as an expert market research analyst specializing in the Saudi Arabia and GCC region. Provide a concise, insightful analysis based on the user's query using the most current information available. Focus on key trends, opportunities, challenges, and potential market size where applicable. Structure the response clearly using markdown for readability (headings, lists). If citing sources, ensure they are relevant.";
-            
-            // *** USING PROVIDED API KEY - REMEMBER SECURITY RISK ***
-            const apiKey = "AIzaSyBjbvKkV9lY5uBSe5kFIj-oMr3ec3F2VCE"; 
-            
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-
-            const payload = {
-                contents: [{ parts: [{ text: userQuery }] }],
-                tools: [{ "google_search": {} }], // Enable Google Search grounding
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }]
-                },
-            };
+        // --- UPDATED Function to call the Serverless Endpoint ---
+        async function fetchMarketResearch(userQuery) {
+            // The relative path '/api/market-research' automatically points to your Vercel function when deployed
+            const functionUrl = '/api/market-research'; 
 
             try {
-                const response = await fetch(apiUrl, {
+                const response = await fetch(functionUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ userQuery: userQuery }) // Send query in body
                 });
 
                 if (!response.ok) {
-                    // Handle API errors (like 4xx, 5xx)
-                    if (response.status === 429 && retryCount < 3) { // Rate limit error, retry
-                        const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000; // Exponential backoff
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        return fetchMarketResearch(userQuery, retryCount + 1);
-                    }
-                     // Try to get more detailed error from Gemini response body
-                    let errorBody = {};
+                    // Try to parse error message from serverless function response
+                    let errorData = {};
                     try {
-                        errorBody = await response.json();
-                    } catch(e) { /* Ignore parsing error if body is not JSON */ }
-                    const errorMessage = errorBody?.error?.message || response.statusText || 'Unknown API Error';
-                    // Check for specific API key related messages (common for 403)
-                    if (response.status === 403 && (errorMessage.toLowerCase().includes('permission denied') || errorMessage.toLowerCase().includes('api key not valid'))) {
-                         throw new Error(`API Error: ${response.status} - Permission denied or invalid API key. Please check your key restrictions (like HTTP referers) in Google Cloud Console.`);
-                    }
-                    throw new Error(`API Error: ${response.status} - ${errorMessage}`);
+                        errorData = await response.json();
+                    } catch (e) { /* Ignore if body isn't json */ }
+                    throw new Error(errorData.error || `Request failed with status ${response.status}`);
                 }
 
                 const result = await response.json();
-                const candidate = result.candidates?.[0];
-
-                if (candidate && candidate.content?.parts?.[0]?.text) {
-                    const text = candidate.content.parts[0].text;
-                    let sources = [];
-                    const groundingMetadata = candidate.groundingMetadata;
-                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
-                        sources = groundingMetadata.groundingAttributions
-                            .map(attribution => ({
-                                uri: attribution.web?.uri,
-                                title: attribution.web?.title,
-                            }))
-                            .filter(source => source.uri && source.title); // Ensure sources are valid
-                    }
-                    return { text, sources };
-                } else {
-                     // Handle unexpected response structure or safety blocks
-                    const finishReason = candidate?.finishReason;
-                    const safetyRatings = candidate?.safetyRatings;
-                    console.error("Gemini API Response Issue:", { finishReason, safetyRatings, result });
-                    let message = 'No content received from API.';
-                    if (finishReason === 'SAFETY') message = 'Content blocked due to safety settings.';
-                    else if (finishReason === 'RECITATION') message = 'Content blocked due to potential recitation issues.';
-                    else if (finishReason) message = `Generation stopped: ${finishReason}`;
-                    throw new Error(message);
-                }
+                return result; // Should contain { text, sources }
 
             } catch (error) {
-                 console.error("Fetch Error:", error); // Log the actual error
-                // Handle network errors or JSON parsing errors
-                if (retryCount < 3 && !(error.message.startsWith('API Error'))) { // Don't retry fatal API errors
-                    const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    return fetchMarketResearch(userQuery, retryCount + 1);
-                }
-                throw error; // Re-throw after final retry attempt or for API errors
+                 console.error("Error calling serverless function:", error);
+                 // Re-throw the error so the caller can handle UI updates
+                 throw new Error(error.message || 'Network error or function failed.'); 
             }
         }
         
         // --- Market Research PDF Download Logic ---
-        // ... (remains the same) ...
-         function downloadMarketResearchPDF() {
+        function downloadMarketResearchPDF() {
             const { jsPDF } = window.jspdf;
             const topic = marketResearchTopic.value.trim();
             const analysisText = marketResearchOutput.textContent;
-            const sourcesHtml = marketResearchSources.innerHTML; // Get HTML again
+            const sourcesHtml = marketResearchSources.innerHTML; 
 
             if (!analysisText || analysisText === 'Enter a topic above to get started...') return;
 
             const doc = new jsPDF();
             
-            // --- PDF Styling and Content ---
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(18);
             doc.setTextColor('#0A2647');
@@ -571,20 +495,17 @@
             doc.setFontSize(11);
             doc.setTextColor('#555555');
 
-            // Add analysis text, handling line breaks
-            const splitText = doc.splitTextToSize(analysisText, 180); // 180 is approx width in mm
+            const splitText = doc.splitTextToSize(analysisText, 180); 
             doc.text(splitText, 14, 50);
             
-            // Add Sources (Restored)
-            let finalY = 50 + (splitText.length * 5); // Recalculate Y position after text
-            if (finalY > 260) { // Add new page if text is too long
+            let finalY = 50 + (splitText.length * 5); 
+            if (finalY > 260) { 
                  doc.addPage();
                  finalY = 20;
             } else {
-                finalY += 15; // Add some space before sources
+                finalY += 15; 
             }
             
-            // Check if there are actual source list items
             const parser = new DOMParser();
             const sourcesDoc = parser.parseFromString(sourcesHtml, 'text/html');
             const links = sourcesDoc.querySelectorAll('a');
@@ -598,14 +519,13 @@
                 
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(10);
-                doc.setTextColor('#0645AD'); // Blue for links
+                doc.setTextColor('#0645AD'); 
                 
                 links.forEach(link => {
-                    if (finalY > 280) { // Check if new page needed for source list
+                    if (finalY > 280) { 
                          doc.addPage();
                          finalY = 20;
                     }
-                    // Add Title first, then URL on a new line or same line if short
                      const sourceText = `${link.textContent}`;
                      const sourceUrl = `(${link.href})`;
                      const combinedText = `${sourceText} ${sourceUrl}`;
@@ -623,18 +543,15 @@
                 });
             }
 
-            // --- Save PDF ---
-            const safeTopic = topic.replace(/[^a-z0-9]/gi, '_').toLowerCase(); // Make filename safe
+            const safeTopic = topic.replace(/[^a-z0-9]/gi, '_').toLowerCase(); 
             doc.save(`market_research_${safeTopic}.pdf`);
         }
-        // Attach event listener to the download button
         downloadResearchPdfBtn.addEventListener('click', downloadMarketResearchPDF);
 
 
         // --- Custom Cursor Logic ---
-        // ... (remains the same) ...
          document.addEventListener('DOMContentLoaded', () => {
-            // Create the cursor elements and add them to the body
+             // ... (Cursor code remains the same) ...
             const cursorDot = document.createElement('div');
             cursorDot.id = 'custom-cursor-dot';
             document.body.appendChild(cursorDot);
@@ -643,7 +560,6 @@
             cursorFollower.id = 'custom-cursor-follower';
             document.body.appendChild(cursorFollower);
 
-            // Update cursor position on mouse move
             document.addEventListener('mousemove', (e) => {
                 const posX = e.clientX + 'px';
                 const posY = e.clientY + 'px';
@@ -653,7 +569,6 @@
                 cursorFollower.style.top = posY;
             });
 
-            // Add/remove classes based on what's being hovered
             document.addEventListener('mouseover', (e) => {
                 const target = e.target;
                 if (target.closest('input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="number"], textarea')) {
@@ -676,6 +591,7 @@
     </script>
     
     <style>
+        /* ... (Styles remain the same) ... */
         body {
             font-family: 'Poppins', sans-serif;
             cursor: none; /* Hide the default cursor */
@@ -870,7 +786,9 @@
 </head>
 <body class="text-gray-800 bg-gray-50 flex flex-col min-h-screen">
 
-    <!-- Auth Container --><div id="auth-container" class="flex items-center justify-center min-h-screen relative overflow-hidden">
+    <!-- Auth Container -->
+     <!-- ... (Auth HTML remains the same) ... -->
+      <div id="auth-container" class="flex items-center justify-center min-h-screen relative overflow-hidden">
         <!-- Animated Background --><div id="login-animation-wrapper">
             <div id="wave-container">
                 <!-- Embedded SVG for the waves --><svg class="waves" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 200">
@@ -970,10 +888,11 @@
     </div>
 
 
-    <!-- Main App Container (Initially Hidden) --><div id="app-container" class="hidden flex-grow flex-col">
+    <!-- Main App Container (Initially Hidden) -->
+     <!-- ... (Rest of App Container HTML remains the same) ... -->
+      <div id="app-container" class="hidden flex-grow flex-col">
         <!-- Header --><header class="bg-[#0A2647] shadow-lg sticky top-0 z-50">
-           <!-- ... (Header content remains the same) ... -->
-             <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
                 <a href="#" class="text-2xl font-bold text-white">
                     Fin-Cast<span class="text-[#FFB830]">.</span>
                 </a>
@@ -1006,9 +925,7 @@
 
         <!-- Wrapper for the main forecast content -->
         <main id="app-main-content" class="container mx-auto p-4 md:p-6 flex-grow">
-            <!-- Main Application -->
-             <!-- ... (Main App content remains the same) ... -->
-             <div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
+            <!-- Main Application --><div id="app" class="bg-white p-6 rounded-2xl shadow-lg">
                 <div class="text-center mb-8">
                     <h1 class="text-3xl md:text-4xl font-bold text-[#0A2647]">Advanced Financial Forecasting & Reporting</h1>
                     <p class="text-gray-600 mt-2 max-w-3xl mx-auto">An intuitive forecasting tool for businesses in Saudi Arabia, the GCC, and beyond. Leverage our advanced analytical engine to gain clearer financial insights.</p>
